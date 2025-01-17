@@ -1,0 +1,44 @@
+#version 310 es
+
+layout(local_size_x = 256) in;
+
+struct Particle {
+    vec2 position;
+    vec2 velocity;
+};
+
+layout(std430, binding = 0) buffer ParticleBuffer {
+    Particle particles[];
+};
+
+uniform vec2 gravityPoint;
+uniform float deltaTime;
+
+void main() {
+    uint index = gl_GlobalInvocationID.x;
+    
+    // Skip if beyond particle count
+    if (index >= particles.length()) return;
+    
+    vec2 pos = particles[index].position;
+    vec2 vel = particles[index].velocity;
+    
+    // Calculate direction to gravity point
+    vec2 toGravity = gravityPoint - pos;
+    float dist = length(toGravity);
+    vec2 dir = toGravity / max(dist, 0.0001); // Normalize with safety
+    
+    // Apply acceleration towards gravity point
+    float strength = 5.0; // Adjust this for stronger/weaker gravity
+    vel += dir * strength * deltaTime;
+    
+    // Apply simple drag
+    vel *= 0.99;
+    
+    // Update position
+    pos += vel * deltaTime;
+    
+    // Store results
+    particles[index].position = pos;
+    particles[index].velocity = vel;
+} 
