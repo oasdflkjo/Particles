@@ -37,109 +37,6 @@ aout << std::endl;\
 //! Color for cornflower blue. Can be sent directly to glClearColor
 #define CORNFLOWER_BLUE 100 / 255.f, 149 / 255.f, 237 / 255.f, 1
 
-// Vertex shader, you'd typically load this from assets
-static const char *vertex = R"vertex(#version 300 es
-layout(location = 0) in vec3 inPosition;
-layout(location = 1) in vec2 inUV;
-
-out vec2 fragUV;
-
-uniform mat4 uProjection;
-
-void main() {
-    fragUV = inUV;
-    gl_Position = uProjection * vec4(inPosition, 1.0);
-}
-)vertex";
-
-// Fragment shader, you'd typically load this from assets
-static const char *fragment = R"fragment(#version 300 es
-precision mediump float;
-
-in vec2 fragUV;
-
-uniform sampler2D uTexture;
-
-out vec4 outColor;
-
-void main() {
-    outColor = texture(uTexture, fragUV);
-}
-)fragment";
-
-// Add compute shader source
-static const char* computeShaderSrc = R"compute(#version 310 es
-layout(local_size_x = 256) in;
-
-struct Particle {
-    vec2 position;
-    vec2 velocity;
-};
-
-layout(std430, binding = 0) buffer ParticleBuffer {
-    Particle particles[];
-};
-
-uniform vec2 gravityPoint;
-uniform float deltaTime;
-
-void main() {
-    uint index = gl_GlobalInvocationID.x;
-    uint particleCount = uint(particles.length());
-    
-    if (index >= particleCount) return;
-    
-    vec2 pos = particles[index].position;
-    vec2 vel = particles[index].velocity;
-    
-    // Simple gravity towards mouse
-    vec2 toGravity = gravityPoint - pos;
-    float dist = length(toGravity);
-    vec2 dir = toGravity / max(dist, 1.0);
-    
-    // Simple physics
-    float strength = 2000.0;
-    vel += dir * strength * deltaTime;
-    vel *= 0.99; // drag
-    
-    pos += vel * deltaTime;
-    
-    // Store results
-    particles[index].position = pos;
-    particles[index].velocity = vel;
-}
-)compute";
-
-// Add particle vertex shader source
-static const char* particleVertexSrc = R"vertex(#version 300 es
-layout(location = 0) in vec2 position;
-uniform mat4 uProjection;
-
-void main() {
-    // Pass through position directly, no projection yet
-    vec2 pos = position / vec2(1000.0);  // Scale down positions to fit in [-1,1]
-    gl_Position = vec4(pos, 0.0, 1.0);
-    gl_PointSize = 8.0;
-}
-)vertex";
-
-// Add particle fragment shader source
-static const char* particleFragmentSrc = R"fragment(#version 300 es
-precision mediump float;
-out vec4 fragColor;
-
-void main() {
-    // Create circular particles with soft edges
-    vec2 coord = gl_PointCoord * 2.0 - 1.0;
-    float r = dot(coord, coord);
-    if (r > 1.0) discard;
-    
-    // Fade out at edges
-    float alpha = 1.0 - r;
-    fragColor = vec4(1.0, 0.5, 0.2, alpha);  // Orange with fade
-}
-)fragment";
-
 /*!
  * Half the height of the projection matrix. This gives you a renderable area of height 4 ranging
  * from -2 to 2
@@ -158,9 +55,11 @@ static constexpr float kProjectionNearPlane = -1.f;
  */
 static constexpr float kProjectionFarPlane = 1.f;
 
-static constexpr int PARTICLES_PER_ROW = 100;  // Adjust this for performance
-static constexpr int PARTICLES_PER_COL = 100;  // This will give us 10,000 particles
+static constexpr int PARTICLES_PER_ROW = 1600;
+static constexpr int PARTICLES_PER_COL = 800;
 static constexpr int NUM_PARTICLES = PARTICLES_PER_ROW * PARTICLES_PER_COL;
+
+#define DEBUG_GRID 0  // Toggle debug grid
 
 Renderer::~Renderer() {
     if (display_ != EGL_NO_DISPLAY) {
@@ -186,6 +85,7 @@ void Renderer::render() {
     if (computeShader_ && particleShader_) {
         updateParticles();
         renderParticles();
+        renderDebugGrid();
     }
 
     auto swapResult = eglSwapBuffers(display_, surface_);
@@ -275,96 +175,56 @@ void Renderer::initRenderer() {
     height_ = -1;
 
     // Setup GL state first
-    glClearColor(0.0f, 0.0f, 0.1f, 1.0f);  // Dark blue background
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);  // Pure black background (changed from dark blue)
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     // Initialize shaders with error checking
     try {
-        // Load main shader
-        shader_ = std::unique_ptr<Shader>(
-                Shader::loadShader(vertex, fragment, "inPosition", "inUV", "uProjection"));
-        if (!shader_) {
-            throw std::runtime_error("Failed to create main shader");
+        auto assetManager = app_->activity->assetManager;
+        if (!assetManager) {
+            throw std::runtime_error("Failed to get asset manager");
         }
-        aout << "Main shader loaded" << std::endl;
-
-        // Test activate without setting uniforms first
-        shader_->activate();
-        shader_->deactivate();
-        aout << "Shader activation test passed" << std::endl;
-
-        // Initialize particle shaders with more error checking
-        aout << "Loading particle shader..." << std::endl;
         
-        // Load vertex shader first
-        GLuint vertexShader = Shader::loadShader(GL_VERTEX_SHADER, particleVertexSrc);
-        if (!vertexShader) {
-            throw std::runtime_error("Failed to compile particle vertex shader");
-        }
-        aout << "Particle vertex shader compiled" << std::endl;
-
-        // Load fragment shader
-        GLuint fragmentShader = Shader::loadShader(GL_FRAGMENT_SHADER, particleFragmentSrc);
-        if (!fragmentShader) {
-            glDeleteShader(vertexShader);
-            throw std::runtime_error("Failed to compile particle fragment shader");
-        }
-        aout << "Particle fragment shader compiled" << std::endl;
-
-        // Create and link program
-        GLuint program = glCreateProgram();
-        if (!program) {
-            glDeleteShader(vertexShader);
-            glDeleteShader(fragmentShader);
-            throw std::runtime_error("Failed to create particle shader program");
-        }
-
-        glAttachShader(program, vertexShader);
-        glAttachShader(program, fragmentShader);
-        glLinkProgram(program);
-
-        GLint linkStatus = GL_FALSE;
-        glGetProgramiv(program, GL_LINK_STATUS, &linkStatus);
-        if (linkStatus != GL_TRUE) {
-            GLint logLength = 0;
-            glGetProgramiv(program, GL_INFO_LOG_LENGTH, &logLength);
-            std::string errorLog;
-            if (logLength > 0) {
-                std::vector<char> log(logLength);
-                glGetProgramInfoLog(program, logLength, nullptr, log.data());
-                errorLog = log.data();
+        try {
+            // Load particle shaders
+            aout << "Loading particle vertex shader..." << std::endl;
+            std::string vertSrc = Utility::loadAsset(assetManager, "shaders/particle.vert");
+            std::string fragSrc = Utility::loadAsset(assetManager, "shaders/particle.frag");
+            
+            particleShader_ = std::unique_ptr<Shader>(
+                Shader::loadShader(vertSrc, fragSrc, "position", "", "uProjection"));
+            if (!particleShader_) {
+                throw std::runtime_error("Failed to create particle shader");
             }
-            glDeleteProgram(program);
-            glDeleteShader(vertexShader);
-            glDeleteShader(fragmentShader);
-            throw std::runtime_error("Failed to link particle shader: " + errorLog);
+            
+            // Load compute shader
+            aout << "Loading compute shader..." << std::endl;
+            std::string computeSrc = Utility::loadAsset(assetManager, "shaders/particle.comp");
+            computeShader_ = std::unique_ptr<Shader>(
+                Shader::loadComputeShader(computeSrc));
+            if (!computeShader_) {
+                throw std::runtime_error("Failed to create compute shader");
+            }
+            
+            // Load grid shader
+            std::string gridVertSrc = Utility::loadAsset(assetManager, "shaders/grid.vert");
+            std::string gridFragSrc = Utility::loadAsset(assetManager, "shaders/grid.frag");
+            gridShader_ = std::unique_ptr<Shader>(
+                Shader::loadShader(gridVertSrc, gridFragSrc, "position", "", "uProjection"));
+            if (!gridShader_) {
+                throw std::runtime_error("Failed to create grid shader");
+            }
+            
+        } catch (const std::exception& e) {
+            throw std::runtime_error(std::string("Error loading shader files: ") + e.what());
         }
 
-        glDeleteShader(vertexShader);
-        glDeleteShader(fragmentShader);
-
-        // Create shader object
-        particleShader_ = std::unique_ptr<Shader>(new Shader(program, 0, -1, -1));
-        aout << "Particle shader created" << std::endl;
-
-        // Test particle shader activation
+        // Test shaders
         particleShader_->activate();
-        if (glGetError() != GL_NO_ERROR) {
-            throw std::runtime_error("Failed to activate particle shader");
-        }
         particleShader_->deactivate();
         aout << "Particle shader loaded and tested" << std::endl;
 
-        // Initialize compute shader with error checking
-        aout << "Loading compute shader..." << std::endl;
-        computeShader_ = std::unique_ptr<Shader>(
-            Shader::loadComputeShader(computeShaderSrc));  // Use loadComputeShader directly
-        if (!computeShader_) {
-            throw std::runtime_error("Failed to create compute shader");
-        }
-
-        // Test compute shader activation
         computeShader_->activate();
         computeShader_->deactivate();
         aout << "Compute shader loaded and tested" << std::endl;
@@ -378,9 +238,10 @@ void Renderer::initRenderer() {
         return;
     }
 
-    // Set initial gravity point
+    // Set initial gravity point to center (0,0)
     gravityPoint_[0] = 0.0f;
     gravityPoint_[1] = 0.0f;
+    aout << "Initial gravity point set to: (" << gravityPoint_[0] << ", " << gravityPoint_[1] << ")" << std::endl;
 
     aout << "Renderer initialization complete" << std::endl;
 }
@@ -388,7 +249,6 @@ void Renderer::initRenderer() {
 void Renderer::updateRenderArea() {
     EGLint width;
     eglQuerySurface(display_, surface_, EGL_WIDTH, &width);
-
     EGLint height;
     eglQuerySurface(display_, surface_, EGL_HEIGHT, &height);
 
@@ -396,18 +256,42 @@ void Renderer::updateRenderArea() {
         width_ = width;
         height_ = height;
         
-        // Calculate viewport to maintain square aspect ratio
-        int size = std::min(width_, height_);
-        int x = (width_ - size) / 2;
-        int y = (height_ - size) / 2;
+        glViewport(0, 0, width_, height_);
         
-        // Set viewport to be square, centered in the window
-        glViewport(x, y, size, size);
+        // Calculate orthographic projection matrix
+        float projectionMatrix[16] = {0};
         
-        aout << "Setting viewport: x=" << x << " y=" << y 
-             << " size=" << size << std::endl;
-
-        shaderNeedsNewProjectionMatrix_ = true;
+        // Set world view to match our grid (-5 to +5)
+        float worldHeight = 10.0f;  // -5 to +5 in Y
+        float worldWidth = worldHeight * (float)width_ / height_;
+        
+        // OpenGL projection matrix centered at 0,0
+        projectionMatrix[0] = 2.0f / worldWidth;   // Scale X
+        projectionMatrix[5] = 2.0f / worldHeight;  // Scale Y
+        projectionMatrix[10] = -1.0f;
+        projectionMatrix[15] = 1.0f;
+        
+        worldWidth_ = worldWidth;
+        worldHeight_ = worldHeight;
+        
+        // Update projection for both shaders
+        if (particleShader_) {
+            particleShader_->activate();
+            GLint projLoc = glGetUniformLocation(particleShader_->program(), "uProjection");
+            if (projLoc != -1) {
+                glUniformMatrix4fv(projLoc, 1, GL_FALSE, projectionMatrix);
+            }
+            particleShader_->deactivate();
+        }
+        
+        if (gridShader_) {
+            gridShader_->activate();
+            GLint projLoc = glGetUniformLocation(gridShader_->program(), "uProjection");
+            if (projLoc != -1) {
+                glUniformMatrix4fv(projLoc, 1, GL_FALSE, projectionMatrix);
+            }
+            gridShader_->deactivate();
+        }
     }
 }
 
@@ -420,23 +304,28 @@ void Renderer::handleInput() {
     for (auto i = 0; i < inputBuffer->motionEventsCount; i++) {
         auto &motionEvent = inputBuffer->motionEvents[i];
         auto action = motionEvent.action;
+
+        // Get the pointer index
         auto pointerIndex = (action & AMOTION_EVENT_ACTION_POINTER_INDEX_MASK)
                 >> AMOTION_EVENT_ACTION_POINTER_INDEX_SHIFT;
-
         auto &pointer = motionEvent.pointers[pointerIndex];
+        
+        // Get screen coordinates
         auto x = GameActivityPointerAxes_getX(&pointer);
         auto y = GameActivityPointerAxes_getY(&pointer);
 
-        // Convert screen coordinates to centered pixel coordinates
-        float glX = x - width_ / 2.0f;
-        float glY = height_ / 2.0f - y;  // Flip Y and center
+        // Convert screen coordinates to world coordinates
+        float worldX = (x / width_ - 0.5f) * worldWidth_;
+        float worldY = -(y / height_ - 0.5f) * worldHeight_;  // Flip Y coordinate
         
         switch (action & AMOTION_EVENT_ACTION_MASK) {
             case AMOTION_EVENT_ACTION_DOWN:
             case AMOTION_EVENT_ACTION_MOVE:
-                gravityPoint_[0] = glX;
-                gravityPoint_[1] = glY;
-                aout << "Touch at pixel coords: (" << glX << ", " << glY << ")" << std::endl;
+                // Update gravity point
+                gravityPoint_[0] = worldX;
+                gravityPoint_[1] = worldY;
+                aout << "Updated gravity point to: (" << gravityPoint_[0] << ", " << gravityPoint_[1] 
+                     << ") from screen coords: (" << x << ", " << y << ")" << std::endl;
                 break;
 
             case AMOTION_EVENT_ACTION_POINTER_DOWN:
@@ -475,29 +364,56 @@ void Renderer::handleInput() {
 }
 
 void Renderer::initParticleSystem() {
-    aout << "Creating particle buffer" << std::endl;
+    aout << "Creating particle buffer for " << NUM_PARTICLES << " particles" << std::endl;
     
     glGenBuffers(1, &particleBuffer_);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, particleBuffer_);
     
-    std::vector<float> particleData(NUM_PARTICLES * 4); // pos.xy, vel.xy
+    // Match particle grid to our visible world coordinates
+    float worldHeight = 10.0f;  // -5 to +5 vertically (matches our grid)
+    float worldWidth = worldHeight * (float)width_ / height_;  // Maintain aspect ratio
     
-    // Create a simple 100x100 grid of particles
-    int gridSize = static_cast<int>(sqrt(NUM_PARTICLES));
-    float spacing = 10.0f;  // Pixels between particles
+    // Debug output
+    aout << "World dimensions: " << worldWidth << " x " << worldHeight << std::endl;
+    aout << "Particles: " << PARTICLES_PER_ROW << " x " << PARTICLES_PER_COL << std::endl;
+    
+    // Calculate spacing to distribute particles evenly
+    float spacingY = worldHeight / (PARTICLES_PER_COL - 1);
+    float spacingX = worldWidth / (PARTICLES_PER_ROW - 1);
+    
+    // Calculate start positions to center the grid
+    float startX = -worldWidth / 2.0f;
+    float startY = -worldHeight / 2.0f;
+    
+    aout << "Spacing: " << spacingX << " x " << spacingY << std::endl;
+    aout << "Start position: " << startX << ", " << startY << std::endl;
+    
+    std::vector<float> particleData(NUM_PARTICLES * 4, 0.0f);
+    
+    // Debug first and last particle positions
+    float firstX = startX;
+    float firstY = startY;
+    float lastX = startX + (PARTICLES_PER_ROW - 1) * spacingX;
+    float lastY = startY + (PARTICLES_PER_COL - 1) * spacingY;
+    aout << "First particle at: " << firstX << ", " << firstY << std::endl;
+    aout << "Last particle at: " << lastX << ", " << lastY << std::endl;
     
     for(int i = 0; i < NUM_PARTICLES; i++) {
-        int x = i % gridSize;
-        int y = i / gridSize;
+        int row = i / PARTICLES_PER_ROW;
+        int col = i % PARTICLES_PER_ROW;
         
-        // Center the grid
-        float xPos = (x - gridSize/2) * spacing;
-        float yPos = (y - gridSize/2) * spacing;
+        // Position relative to visible world space
+        float xPos = startX + (col * spacingX);
+        float yPos = startY + (row * spacingY);
+        
+        // Very small initial velocities
+        float randAngle = (float)rand() / RAND_MAX * 2.0f * M_PI;
+        float randSpeed = ((float)rand() / RAND_MAX * 0.5f);  // Even smaller initial speed
         
         particleData[i*4 + 0] = xPos;
         particleData[i*4 + 1] = yPos;
-        particleData[i*4 + 2] = 0.0f;  // Initial velocity
-        particleData[i*4 + 3] = 0.0f;
+        particleData[i*4 + 2] = cos(randAngle) * randSpeed;
+        particleData[i*4 + 3] = sin(randAngle) * randSpeed;
     }
     
     glBufferData(GL_SHADER_STORAGE_BUFFER, 
@@ -505,49 +421,65 @@ void Renderer::initParticleSystem() {
                  particleData.data(), 
                  GL_DYNAMIC_DRAW);
     
+    // Verify buffer creation
+    GLenum error = glGetError();
+    if (error != GL_NO_ERROR) {
+        aout << "Error after buffer creation: 0x" << std::hex << error << std::endl;
+    }
+    
     glGenVertexArrays(1, &particleVAO_);
     glBindVertexArray(particleVAO_);
     glBindBuffer(GL_ARRAY_BUFFER, particleBuffer_);
+    
+    // Position attribute (vec2)
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), nullptr);
     glEnableVertexAttribArray(0);
+    
+    // Velocity attribute (vec2)
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), 
+                         (void*)(2 * sizeof(float)));
+    glEnableVertexAttribArray(1);
+    
+    // Verify VAO setup
+    error = glGetError();
+    if (error != GL_NO_ERROR) {
+        aout << "Error after VAO setup: 0x" << std::hex << error << std::endl;
+    }
 }
 
 void Renderer::updateParticles() {
     if (!computeShader_) return;
     
     computeShader_->activate();
+    
+    // Calculate delta time with 120 FPS cap
+    auto currentTime = std::chrono::high_resolution_clock::now();
+    float deltaTime = std::chrono::duration<float>(currentTime - lastFrameTime_).count();
+    
+    // Cap deltaTime to 1/120 seconds (approximately 0.00833)
+    const float targetFrameTime = 1.0f / 120.0f;
+    deltaTime = std::min(deltaTime, targetFrameTime);
+    
+    lastFrameTime_ = currentTime;
+    
+    // IMPORTANT: Bind buffer before setting uniforms
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, particleBuffer_);
     
-    // Use system clock for timing
-    static auto startTime = std::chrono::high_resolution_clock::now();
-    auto currentTime = std::chrono::high_resolution_clock::now();
-    float deltaTime = std::chrono::duration<float>(currentTime - startTime).count();
-    startTime = currentTime;
-    
-    // Set uniforms and check locations
+    // Get uniform locations AFTER activating shader
     GLint gravityLoc = glGetUniformLocation(computeShader_->program(), "gravityPoint");
     GLint deltaTimeLoc = glGetUniformLocation(computeShader_->program(), "deltaTime");
-    
-    aout << "Gravity location: " << gravityLoc << ", DeltaTime location: " << deltaTimeLoc << std::endl;
-    aout << "Current gravity point: " << gravityPoint_[0] << ", " << gravityPoint_[1] << std::endl;
-    aout << "Delta time: " << deltaTime << std::endl;
     
     if (gravityLoc != -1) {
         glUniform2fv(gravityLoc, 1, gravityPoint_);
     }
+    
     if (deltaTimeLoc != -1) {
         glUniform1f(deltaTimeLoc, deltaTime);
     }
     
-    // Dispatch compute shader with logging
-    int numGroups = NUM_PARTICLES / 256 + 1;
-    aout << "Dispatching compute shader with " << numGroups << " work groups" << std::endl;
+    // Dispatch compute shader
+    int numGroups = (NUM_PARTICLES + 255) / 256;
     glDispatchCompute(numGroups, 1, 1);
-    
-    GLenum error = glGetError();
-    if (error != GL_NO_ERROR) {
-        aout << "Error after dispatch: 0x" << std::hex << error << std::endl;
-    }
     
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
     computeShader_->deactivate();
@@ -558,25 +490,15 @@ void Renderer::renderParticles() {
     
     particleShader_->activate();
     
-    // Clear to dark color to see particles better
-    glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+    // Clear to black
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);  // Pure black background
     glClear(GL_COLOR_BUFFER_BIT);
     
-    // Enable point sprites - in OpenGL ES 3.0, point size is controlled by gl_PointSize
-    // No need to enable GL_PROGRAM_POINT_SIZE as it's always enabled
+    // Use alpha blending instead of additive
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     
     glBindVertexArray(particleVAO_);
-    
-    // Debug: verify state before draw
-    GLint currentVAO = 0;
-    glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &currentVAO);
-    aout << "Current VAO: " << currentVAO << " (expected: " << particleVAO_ << ")" << std::endl;
-    
-    GLint currentProgram = 0;
-    glGetIntegerv(GL_CURRENT_PROGRAM, &currentProgram);
-    aout << "Current program: " << currentProgram << " (expected: " << particleShader_->program() << ")" << std::endl;
     
     // Draw particles
     glDrawArrays(GL_POINTS, 0, NUM_PARTICLES);
@@ -588,4 +510,67 @@ void Renderer::renderParticles() {
     }
     
     particleShader_->deactivate();
+}
+
+void Renderer::renderDebugGrid() {
+#if DEBUG_GRID
+    if (!gridShader_) return;
+    
+    // Generate grid lines if not initialized
+    if (debugGridVAO_ == 0) {
+        std::vector<float> gridLines;
+        float spacing = 1.0f;    // One unit in world space
+        float extent = 5.0f;     // Show -5 to +5 in both directions
+        
+        // Generate horizontal lines
+        for (float y = -extent; y <= extent; y += spacing) {
+            gridLines.push_back(-extent);  // Start x
+            gridLines.push_back(y);        // y
+            gridLines.push_back(extent);   // End x
+            gridLines.push_back(y);        // y
+        }
+        
+        // Generate vertical lines
+        for (float x = -extent; x <= extent; x += spacing) {
+            gridLines.push_back(x);        // x
+            gridLines.push_back(-extent);  // Start y
+            gridLines.push_back(x);        // x
+            gridLines.push_back(extent);   // End y
+        }
+        
+        // Add origin marker point
+        gridLines.push_back(0.0f);
+        gridLines.push_back(0.0f);
+        
+        glGenVertexArrays(1, &debugGridVAO_);
+        glGenBuffers(1, &debugGridVBO_);
+        
+        glBindVertexArray(debugGridVAO_);
+        glBindBuffer(GL_ARRAY_BUFFER, debugGridVBO_);
+        glBufferData(GL_ARRAY_BUFFER, gridLines.size() * sizeof(float), 
+                    gridLines.data(), GL_STATIC_DRAW);
+        
+        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, nullptr);
+        glEnableVertexAttribArray(0);
+        
+        // Store total number of vertices (2 per line segment)
+        numGridLines_ = gridLines.size() / 2;  // Each vertex is vec2 (x,y)
+    }
+    
+    gridShader_->activate();
+    glBindVertexArray(debugGridVAO_);
+    
+    // Make lines brighter and thicker
+    GLint colorLoc = glGetUniformLocation(gridShader_->program(), "uColor");
+    
+    // Draw the grid lines
+    glUniform4f(colorLoc, 0.3f, 0.3f, 0.3f, 1.0f);  // Brighter white
+    glDrawArrays(GL_LINES, 0, numGridLines_ - 1);  // Draw all lines except last vertex pair
+    
+    // Draw origin point in red
+    glUniform4f(colorLoc, 1.0f, 0.0f, 0.0f, 1.0f);
+    glDrawArrays(GL_POINTS, numGridLines_ - 1, 1);  // Draw last vertex as point
+    
+    gridShader_->deactivate();
+#endif
 }

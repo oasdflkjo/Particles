@@ -226,6 +226,7 @@ Shader* Shader::loadComputeShader(const std::string& computeSource) {
     glAttachShader(program, computeShader);
     glLinkProgram(program);
 
+    // Get link status and log
     GLint linkStatus = GL_FALSE;
     glGetProgramiv(program, GL_LINK_STATUS, &linkStatus);
     if (linkStatus != GL_TRUE) {
@@ -241,25 +242,21 @@ Shader* Shader::loadComputeShader(const std::string& computeSource) {
         return nullptr;
     }
 
-    // Validate program
-    glValidateProgram(program);
-    GLint validateStatus = GL_FALSE;
-    glGetProgramiv(program, GL_VALIDATE_STATUS, &validateStatus);
-    if (validateStatus != GL_TRUE) {
-        GLint logLength = 0;
-        glGetProgramiv(program, GL_INFO_LOG_LENGTH, &logLength);
-        if (logLength > 0) {
-            std::vector<char> log(logLength);
-            glGetProgramInfoLog(program, logLength, nullptr, log.data());
-            aout << "Compute shader validation error: " << log.data() << std::endl;
-        }
-        glDeleteProgram(program);
-        glDeleteShader(computeShader);
-        return nullptr;
+    // Print active uniforms for debugging
+    GLint numUniforms = 0;
+    glGetProgramiv(program, GL_ACTIVE_UNIFORMS, &numUniforms);
+    aout << "Number of active uniforms: " << numUniforms << std::endl;
+    
+    for (GLint i = 0; i < numUniforms; i++) {
+        char name[128];
+        GLint size;
+        GLenum type;
+        glGetActiveUniform(program, i, sizeof(name), nullptr, &size, &type, name);
+        aout << "Uniform " << i << ": " << name << " (location: " 
+             << glGetUniformLocation(program, name) << ")" << std::endl;
     }
 
     glDeleteShader(computeShader);
-    aout << "Compute shader created successfully" << std::endl;
     return new Shader(program);
 }
 

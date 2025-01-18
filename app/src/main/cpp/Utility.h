@@ -2,6 +2,9 @@
 #define ANDROIDGLINVESTIGATIONS_UTILITY_H
 
 #include <cassert>
+#include <string>
+#include <stdexcept>
+#include <android/asset_manager.h>
 
 class Utility {
 public:
@@ -29,6 +32,8 @@ public:
             float far);
 
     static float *buildIdentityMatrix(float *outMatrix);
+
+    static std::string loadAsset(AAssetManager* mgr, const std::string& path);
 };
 
 #endif //ANDROIDGLINVESTIGATIONS_UTILITY_H

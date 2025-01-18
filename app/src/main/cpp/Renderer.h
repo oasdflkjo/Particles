@@ -5,6 +5,7 @@
 #include <GLES3/gl31.h>
 #include <memory>
 #include <vector>
+#include <chrono>
 
 #include "Model.h"
 #include "Shader.h"
@@ -13,8 +14,6 @@ struct android_app;
 
 class Renderer {
 public:
-    static constexpr int NUM_PARTICLES = 10000;
-
     inline Renderer(android_app *pApp) :
             app_(pApp),
             display_(EGL_NO_DISPLAY),
@@ -28,7 +27,8 @@ public:
             particleVAO_(0),
             shader_(nullptr),
             computeShader_(nullptr),
-            particleShader_(nullptr) {
+            particleShader_(nullptr),
+            lastFrameTime_(std::chrono::high_resolution_clock::now()) {
         initRenderer();
     }
 
@@ -61,7 +61,16 @@ private:
     GLuint particleBuffer_;
     GLuint particleVAO_;
     float gravityPoint_[2];
-    double lastFrameTime_;
+    std::chrono::high_resolution_clock::time_point lastFrameTime_;
+    float worldWidth_ = 0.0f;
+    float worldHeight_ = 0.0f;
+
+    // Debug grid members
+    GLuint debugGridVAO_ = 0;
+    GLuint debugGridVBO_ = 0;
+    GLuint numGridLines_ = 0;
+    std::unique_ptr<Shader> gridShader_;
+    void renderDebugGrid();
 };
 
 #endif //ANDROIDGLINVESTIGATIONS_RENDERER_H

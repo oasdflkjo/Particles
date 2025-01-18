@@ -16,29 +16,41 @@ uniform float deltaTime;
 
 void main() {
     uint index = gl_GlobalInvocationID.x;
+    uint numParticles = uint(particles.length());
     
-    // Skip if beyond particle count
-    if (index >= particles.length()) return;
+    if (index >= numParticles) return;
     
     vec2 pos = particles[index].position;
     vec2 vel = particles[index].velocity;
     
+    // Physics parameters
+    float attractionStrength = 20.0;  // Constant force strength
+    float terminalVelocity = 200.0;    // High max velocity
+    float damping = 0.998;            // Very little damping
+    
     // Calculate direction to gravity point
     vec2 toGravity = gravityPoint - pos;
-    float dist = length(toGravity);
-    vec2 dir = toGravity / max(dist, 0.0001); // Normalize with safety
+    vec2 dir = normalize(toGravity);
     
-    // Apply acceleration towards gravity point
-    float strength = 5.0; // Adjust this for stronger/weaker gravity
-    vel += dir * strength * deltaTime;
+    // Apply constant force in direction of gravity point
+    vec2 force = dir * attractionStrength;
     
-    // Apply simple drag
-    vel *= 0.99;
+    // Apply forces
+    vel += force * deltaTime;
+    
+    // Apply terminal velocity
+    float speedSq = dot(vel, vel);
+    if (speedSq > terminalVelocity * terminalVelocity) {
+        vel = normalize(vel) * terminalVelocity;
+    }
+    
+    // Apply damping
+    vel *= damping;
     
     // Update position
     pos += vel * deltaTime;
     
-    // Store results
+    // Store back
     particles[index].position = pos;
     particles[index].velocity = vel;
 } 
