@@ -2,13 +2,13 @@
 
 layout(local_size_x = 256) in;
 
-struct Particle {
-    vec2 position;
-    vec2 velocity;
+// Separate buffers for positions and velocities (SoA)
+layout(std430, binding = 0) buffer PositionBuffer {
+    vec2 positions[];
 };
 
-layout(std430, binding = 0) buffer ParticleBuffer {
-    Particle particles[];
+layout(std430, binding = 1) buffer VelocityBuffer {
+    vec2 velocities[];
 };
 
 uniform vec2 gravityPoint;
@@ -23,12 +23,12 @@ const float DAMPING = 0.9992;
 
 void main() {
     uint index = gl_GlobalInvocationID.x;
-    uint numParticles = uint(particles.length());
+    uint numParticles = uint(positions.length());
     
     if (index >= numParticles) return;
     
-    vec2 pos = particles[index].position;
-    vec2 vel = particles[index].velocity;
+    vec2 pos = positions[index];
+    vec2 vel = velocities[index];
     
     // Calculate direction to gravity point using inversesqrt
     vec2 toGravity = gravityPoint - pos;
@@ -53,6 +53,6 @@ void main() {
     pos += vel * deltaTime;
     
     // Store back
-    particles[index].position = pos;
-    particles[index].velocity = vel;
+    positions[index] = pos;
+    velocities[index] = vel;
 } 

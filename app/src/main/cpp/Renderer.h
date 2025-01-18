@@ -22,7 +22,8 @@ public:
             width_(0),
             height_(0),
             gravityPoint_{0.0f, 0.0f},
-            particleBuffer_(0),
+            positionBuffer_(0),
+            velocityBuffer_(0),
             particleVAO_(0),
             shader_(nullptr),
             computeShader_(nullptr),
@@ -55,7 +56,10 @@ private:
 
     std::unique_ptr<Shader> computeShader_;
     std::unique_ptr<Shader> particleShader_;
-    GLuint particleBuffer_;
+    
+    // Separate buffers for positions and velocities (SoA)
+    GLuint positionBuffer_;
+    GLuint velocityBuffer_;
     GLuint particleVAO_;
     float gravityPoint_[2];
     

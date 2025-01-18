@@ -344,10 +344,11 @@ void Renderer::handleInput() {
 }
 
 void Renderer::initParticleSystem() {
-    aout << "Creating particle buffer for " << NUM_PARTICLES << " particles" << std::endl;
+    aout << "Creating particle buffers for " << NUM_PARTICLES << " particles" << std::endl;
     
-    glGenBuffers(1, &particleBuffer_);
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, particleBuffer_);
+    // Create separate buffers for positions and velocities
+    glGenBuffers(1, &positionBuffer_);
+    glGenBuffers(1, &velocityBuffer_);
     
     // Match particle grid to our visible world coordinates
     float worldHeight = 10.0f;  // -5 to +5 vertically (matches our grid)
@@ -365,18 +366,9 @@ void Renderer::initParticleSystem() {
     float startX = -worldWidth / 2.0f;
     float startY = -worldHeight / 2.0f;
     
-    aout << "Spacing: " << spacingX << " x " << spacingY << std::endl;
-    aout << "Start position: " << startX << ", " << startY << std::endl;
-    
-    std::vector<float> particleData(NUM_PARTICLES * 4, 0.0f);
-    
-    // Debug first and last particle positions
-    float firstX = startX;
-    float firstY = startY;
-    float lastX = startX + (PARTICLES_PER_ROW - 1) * spacingX;
-    float lastY = startY + (PARTICLES_PER_COL - 1) * spacingY;
-    aout << "First particle at: " << firstX << ", " << firstY << std::endl;
-    aout << "Last particle at: " << lastX << ", " << lastY << std::endl;
+    // Allocate aligned memory for positions and velocities
+    alignas(16) std::vector<float> positions(NUM_PARTICLES * 2);
+    alignas(16) std::vector<float> velocities(NUM_PARTICLES * 2);
     
     for(int i = 0; i < NUM_PARTICLES; i++) {
         int row = i / PARTICLES_PER_ROW;
@@ -388,42 +380,47 @@ void Renderer::initParticleSystem() {
         
         // Very small initial velocities
         float randAngle = (float)rand() / RAND_MAX * 2.0f * M_PI;
-        float randSpeed = ((float)rand() / RAND_MAX * 0.5f);  // Even smaller initial speed
+        float randSpeed = ((float)rand() / RAND_MAX * 0.5f);
         
-        particleData[i*4 + 0] = xPos;
-        particleData[i*4 + 1] = yPos;
-        particleData[i*4 + 2] = cos(randAngle) * randSpeed;
-        particleData[i*4 + 3] = sin(randAngle) * randSpeed;
+        // Store in SoA format
+        positions[i * 2] = xPos;
+        positions[i * 2 + 1] = yPos;
+        velocities[i * 2] = cos(randAngle) * randSpeed;
+        velocities[i * 2 + 1] = sin(randAngle) * randSpeed;
     }
     
+    // Upload position data
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, positionBuffer_);
     glBufferData(GL_SHADER_STORAGE_BUFFER, 
-                 particleData.size() * sizeof(float),
-                 particleData.data(), 
+                 positions.size() * sizeof(float),
+                 positions.data(), 
                  GL_DYNAMIC_DRAW);
     
-    // Verify buffer creation
-    GLenum error = glGetError();
-    if (error != GL_NO_ERROR) {
-        aout << "Error after buffer creation: 0x" << std::hex << error << std::endl;
-    }
+    // Upload velocity data
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, velocityBuffer_);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, 
+                 velocities.size() * sizeof(float),
+                 velocities.data(), 
+                 GL_DYNAMIC_DRAW);
     
+    // Set up VAO
     glGenVertexArrays(1, &particleVAO_);
     glBindVertexArray(particleVAO_);
-    glBindBuffer(GL_ARRAY_BUFFER, particleBuffer_);
     
     // Position attribute (vec2)
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), nullptr);
+    glBindBuffer(GL_ARRAY_BUFFER, positionBuffer_);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), nullptr);
     glEnableVertexAttribArray(0);
     
     // Velocity attribute (vec2)
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), 
-                         (void*)(2 * sizeof(float)));
+    glBindBuffer(GL_ARRAY_BUFFER, velocityBuffer_);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), nullptr);
     glEnableVertexAttribArray(1);
     
-    // Verify VAO setup
-    error = glGetError();
+    // Verify setup
+    GLenum error = glGetError();
     if (error != GL_NO_ERROR) {
-        aout << "Error after VAO setup: 0x" << std::hex << error << std::endl;
+        aout << "Error after buffer setup: 0x" << std::hex << error << std::endl;
     }
 }
 
@@ -435,17 +432,15 @@ void Renderer::updateParticles() {
     // Calculate delta time with 120 FPS cap
     auto currentTime = std::chrono::steady_clock::now();
     float deltaTime = std::chrono::duration<float>(currentTime - lastFrameTime_).count();
-    
-    // Cap deltaTime to 1/120 seconds (approximately 0.00833)
     const float targetFrameTime = 1.0f / 120.0f;
     deltaTime = std::min(deltaTime, targetFrameTime);
-    
     lastFrameTime_ = currentTime;
     
-    // IMPORTANT: Bind buffer before setting uniforms
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, particleBuffer_);
+    // Bind both buffers to their respective binding points
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, positionBuffer_);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, velocityBuffer_);
     
-    // Get uniform locations AFTER activating shader
+    // Set uniforms
     GLint gravityLoc = glGetUniformLocation(computeShader_->program(), "gravityPoint");
     GLint deltaTimeLoc = glGetUniformLocation(computeShader_->program(), "deltaTime");
     
@@ -461,6 +456,7 @@ void Renderer::updateParticles() {
     int numGroups = (NUM_PARTICLES + 255) / 256;
     glDispatchCompute(numGroups, 1, 1);
     
+    // Ensure compute shader writes are visible
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
     computeShader_->deactivate();
 }
