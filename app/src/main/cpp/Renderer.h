@@ -14,21 +14,20 @@ struct android_app;
 
 class Renderer {
 public:
-    inline Renderer(android_app *pApp) :
+    explicit Renderer(android_app *pApp) :
             app_(pApp),
             display_(EGL_NO_DISPLAY),
             surface_(EGL_NO_SURFACE),
             context_(EGL_NO_CONTEXT),
             width_(0),
             height_(0),
-            shaderNeedsNewProjectionMatrix_(true),
             gravityPoint_{0.0f, 0.0f},
             particleBuffer_(0),
             particleVAO_(0),
             shader_(nullptr),
             computeShader_(nullptr),
-            particleShader_(nullptr),
-            lastFrameTime_(std::chrono::high_resolution_clock::now()) {
+            particleShader_(nullptr) {
+        lastFrameTime_ = std::chrono::steady_clock::now();
         initRenderer();
     }
 
@@ -43,6 +42,7 @@ private:
     void initParticleSystem();
     void updateParticles();
     void renderParticles();
+    void renderDebugGrid();
 
     android_app *app_;
     EGLDisplay display_;
@@ -50,8 +50,6 @@ private:
     EGLContext context_;
     EGLint width_;
     EGLint height_;
-
-    bool shaderNeedsNewProjectionMatrix_;
 
     std::unique_ptr<Shader> shader_;
     std::vector<Model> models_;
@@ -61,7 +59,10 @@ private:
     GLuint particleBuffer_;
     GLuint particleVAO_;
     float gravityPoint_[2];
-    std::chrono::high_resolution_clock::time_point lastFrameTime_;
+    
+    using TimePoint = std::chrono::steady_clock::time_point;
+    TimePoint lastFrameTime_;
+    
     float worldWidth_ = 0.0f;
     float worldHeight_ = 0.0f;
 
@@ -70,7 +71,6 @@ private:
     GLuint debugGridVBO_ = 0;
     GLuint numGridLines_ = 0;
     std::unique_ptr<Shader> gridShader_;
-    void renderDebugGrid();
 };
 
 #endif //ANDROIDGLINVESTIGATIONS_RENDERER_H

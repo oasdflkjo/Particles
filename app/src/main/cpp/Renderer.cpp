@@ -453,7 +453,7 @@ void Renderer::updateParticles() {
     computeShader_->activate();
     
     // Calculate delta time with 120 FPS cap
-    auto currentTime = std::chrono::high_resolution_clock::now();
+    auto currentTime = std::chrono::steady_clock::now();
     float deltaTime = std::chrono::duration<float>(currentTime - lastFrameTime_).count();
     
     // Cap deltaTime to 1/120 seconds (approximately 0.00833)

@@ -26,7 +26,7 @@ void main() {
     // Physics parameters
     float attractionStrength = 20.0;  // Constant force strength
     float terminalVelocity = 200.0;    // High max velocity
-    float damping = 0.998;            // Very little damping
+    float damping = 0.9992;            // Very little damping
     
     // Calculate direction to gravity point
     vec2 toGravity = gravityPoint - pos;
