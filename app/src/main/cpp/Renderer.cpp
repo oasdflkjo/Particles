@@ -85,27 +85,23 @@ uniform float deltaTime;
 
 void main() {
     uint index = gl_GlobalInvocationID.x;
-    uint particleCount = uint(particles.length());  // Convert to uint
+    uint particleCount = uint(particles.length());
     
-    // Skip if beyond particle count
     if (index >= particleCount) return;
     
     vec2 pos = particles[index].position;
     vec2 vel = particles[index].velocity;
     
-    // Calculate direction to gravity point
+    // Simple gravity towards mouse
     vec2 toGravity = gravityPoint - pos;
     float dist = length(toGravity);
-    vec2 dir = toGravity / max(dist, 0.0001); // Normalize with safety
+    vec2 dir = toGravity / max(dist, 1.0);
     
-    // Apply acceleration towards gravity point
-    float strength = 5.0; // Adjust this for stronger/weaker gravity
+    // Simple physics
+    float strength = 2000.0;
     vel += dir * strength * deltaTime;
+    vel *= 0.99; // drag
     
-    // Apply simple drag
-    vel *= 0.99;
-    
-    // Update position
     pos += vel * deltaTime;
     
     // Store results
@@ -120,8 +116,10 @@ layout(location = 0) in vec2 position;
 uniform mat4 uProjection;
 
 void main() {
-    gl_Position = vec4(position, 0.0, 1.0); // Remove projection matrix for now
-    gl_PointSize = 4.0;
+    // Pass through position directly, no projection yet
+    vec2 pos = position / vec2(1000.0);  // Scale down positions to fit in [-1,1]
+    gl_Position = vec4(pos, 0.0, 1.0);
+    gl_PointSize = 8.0;
 }
 )vertex";
 
@@ -131,7 +129,14 @@ precision mediump float;
 out vec4 fragColor;
 
 void main() {
-    fragColor = vec4(1.0, 0.8, 0.3, 1.0); // Simple solid color for now
+    // Create circular particles with soft edges
+    vec2 coord = gl_PointCoord * 2.0 - 1.0;
+    float r = dot(coord, coord);
+    if (r > 1.0) discard;
+    
+    // Fade out at edges
+    float alpha = 1.0 - r;
+    fragColor = vec4(1.0, 0.5, 0.2, alpha);  // Orange with fade
 }
 )fragment";
 
@@ -153,6 +158,10 @@ static constexpr float kProjectionNearPlane = -1.f;
  */
 static constexpr float kProjectionFarPlane = 1.f;
 
+static constexpr int PARTICLES_PER_ROW = 100;  // Adjust this for performance
+static constexpr int PARTICLES_PER_COL = 100;  // This will give us 10,000 particles
+static constexpr int NUM_PARTICLES = PARTICLES_PER_ROW * PARTICLES_PER_COL;
+
 Renderer::~Renderer() {
     if (display_ != EGL_NO_DISPLAY) {
         eglMakeCurrent(display_, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
@@ -171,34 +180,9 @@ Renderer::~Renderer() {
 
 void Renderer::render() {
     updateRenderArea();
-
-    if (shaderNeedsNewProjectionMatrix_) {
-        float projectionMatrix[16] = {0};
-        Utility::buildOrthographicMatrix(
-                projectionMatrix,
-                kProjectionHalfHeight,
-                float(width_) / height_,
-                kProjectionNearPlane,
-                kProjectionFarPlane);
-
-        if (particleShader_) {
-            particleShader_->activate();
-            particleShader_->setProjectionMatrix(projectionMatrix);
-            particleShader_->deactivate();
-        }
-        
-        if (shader_) {
-            shader_->activate();
-            shader_->setProjectionMatrix(projectionMatrix);
-            shader_->deactivate();
-        }
-        
-        shaderNeedsNewProjectionMatrix_ = false;
-    }
-
+    
     glClear(GL_COLOR_BUFFER_BIT);
     
-    // Update and render particles only if shaders are initialized
     if (computeShader_ && particleShader_) {
         updateParticles();
         renderParticles();
@@ -291,7 +275,7 @@ void Renderer::initRenderer() {
     height_ = -1;
 
     // Setup GL state first
-    glClearColor(CORNFLOWER_BLUE);
+    glClearColor(0.0f, 0.0f, 0.1f, 1.0f);  // Dark blue background
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
@@ -411,9 +395,18 @@ void Renderer::updateRenderArea() {
     if (width != width_ || height != height_) {
         width_ = width;
         height_ = height;
-        glViewport(0, 0, width, height);
+        
+        // Calculate viewport to maintain square aspect ratio
+        int size = std::min(width_, height_);
+        int x = (width_ - size) / 2;
+        int y = (height_ - size) / 2;
+        
+        // Set viewport to be square, centered in the window
+        glViewport(x, y, size, size);
+        
+        aout << "Setting viewport: x=" << x << " y=" << y 
+             << " size=" << size << std::endl;
 
-        // make sure that we lazily recreate the projection matrix before we render
         shaderNeedsNewProjectionMatrix_ = true;
     }
 }
@@ -434,15 +427,16 @@ void Renderer::handleInput() {
         auto x = GameActivityPointerAxes_getX(&pointer);
         auto y = GameActivityPointerAxes_getY(&pointer);
 
-        // Convert screen coordinates to GL coordinates
-        float glX = (x / width_) * 2.0f - 1.0f;
-        float glY = -((y / height_) * 2.0f - 1.0f); // Flip Y coordinate
+        // Convert screen coordinates to centered pixel coordinates
+        float glX = x - width_ / 2.0f;
+        float glY = height_ / 2.0f - y;  // Flip Y and center
         
         switch (action & AMOTION_EVENT_ACTION_MASK) {
             case AMOTION_EVENT_ACTION_DOWN:
             case AMOTION_EVENT_ACTION_MOVE:
                 gravityPoint_[0] = glX;
                 gravityPoint_[1] = glY;
+                aout << "Touch at pixel coords: (" << glX << ", " << glY << ")" << std::endl;
                 break;
 
             case AMOTION_EVENT_ACTION_POINTER_DOWN:
@@ -483,24 +477,26 @@ void Renderer::handleInput() {
 void Renderer::initParticleSystem() {
     aout << "Creating particle buffer" << std::endl;
     
-    // Create and initialize particle buffer
     glGenBuffers(1, &particleBuffer_);
-    if (glGetError() != GL_NO_ERROR || particleBuffer_ == 0) {
-        throw std::runtime_error("Failed to create particle buffer");
-    }
-    
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, particleBuffer_);
-    if (glGetError() != GL_NO_ERROR) {
-        throw std::runtime_error("Failed to bind particle buffer");
-    }
     
-    // Initialize particles with random positions
     std::vector<float> particleData(NUM_PARTICLES * 4); // pos.xy, vel.xy
+    
+    // Create a simple 100x100 grid of particles
+    int gridSize = static_cast<int>(sqrt(NUM_PARTICLES));
+    float spacing = 10.0f;  // Pixels between particles
+    
     for(int i = 0; i < NUM_PARTICLES; i++) {
-        // Use floating point division to avoid overflow
-        particleData[i*4 + 0] = (rand() / static_cast<float>(RAND_MAX)) * 2.0f - 1.0f;
-        particleData[i*4 + 1] = (rand() / static_cast<float>(RAND_MAX)) * 2.0f - 1.0f;
-        particleData[i*4 + 2] = 0.0f;
+        int x = i % gridSize;
+        int y = i / gridSize;
+        
+        // Center the grid
+        float xPos = (x - gridSize/2) * spacing;
+        float yPos = (y - gridSize/2) * spacing;
+        
+        particleData[i*4 + 0] = xPos;
+        particleData[i*4 + 1] = yPos;
+        particleData[i*4 + 2] = 0.0f;  // Initial velocity
         particleData[i*4 + 3] = 0.0f;
     }
     
@@ -508,30 +504,12 @@ void Renderer::initParticleSystem() {
                  particleData.size() * sizeof(float),
                  particleData.data(), 
                  GL_DYNAMIC_DRAW);
-    if (glGetError() != GL_NO_ERROR) {
-        throw std::runtime_error("Failed to upload particle data");
-    }
-
-    // Create and setup VAO
-    glGenVertexArrays(1, &particleVAO_);
-    if (glGetError() != GL_NO_ERROR || particleVAO_ == 0) {
-        throw std::runtime_error("Failed to create VAO");
-    }
     
+    glGenVertexArrays(1, &particleVAO_);
     glBindVertexArray(particleVAO_);
-    if (glGetError() != GL_NO_ERROR) {
-        throw std::runtime_error("Failed to bind VAO");
-    }
-
     glBindBuffer(GL_ARRAY_BUFFER, particleBuffer_);
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), nullptr);
     glEnableVertexAttribArray(0);
-    
-    if (glGetError() != GL_NO_ERROR) {
-        throw std::runtime_error("Failed to setup VAO attributes");
-    }
-
-    aout << "Particle system initialization complete" << std::endl;
 }
 
 void Renderer::updateParticles() {
@@ -546,9 +524,13 @@ void Renderer::updateParticles() {
     float deltaTime = std::chrono::duration<float>(currentTime - startTime).count();
     startTime = currentTime;
     
-    // Set uniforms
+    // Set uniforms and check locations
     GLint gravityLoc = glGetUniformLocation(computeShader_->program(), "gravityPoint");
     GLint deltaTimeLoc = glGetUniformLocation(computeShader_->program(), "deltaTime");
+    
+    aout << "Gravity location: " << gravityLoc << ", DeltaTime location: " << deltaTimeLoc << std::endl;
+    aout << "Current gravity point: " << gravityPoint_[0] << ", " << gravityPoint_[1] << std::endl;
+    aout << "Delta time: " << deltaTime << std::endl;
     
     if (gravityLoc != -1) {
         glUniform2fv(gravityLoc, 1, gravityPoint_);
@@ -557,12 +539,17 @@ void Renderer::updateParticles() {
         glUniform1f(deltaTimeLoc, deltaTime);
     }
     
-    // Dispatch compute shader
-    glDispatchCompute(NUM_PARTICLES / 256 + 1, 1, 1);
+    // Dispatch compute shader with logging
+    int numGroups = NUM_PARTICLES / 256 + 1;
+    aout << "Dispatching compute shader with " << numGroups << " work groups" << std::endl;
+    glDispatchCompute(numGroups, 1, 1);
     
-    // Memory barrier to ensure compute shader writes are visible
+    GLenum error = glGetError();
+    if (error != GL_NO_ERROR) {
+        aout << "Error after dispatch: 0x" << std::hex << error << std::endl;
+    }
+    
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-    
     computeShader_->deactivate();
 }
 
@@ -570,7 +557,35 @@ void Renderer::renderParticles() {
     if (!particleShader_) return;
     
     particleShader_->activate();
+    
+    // Clear to dark color to see particles better
+    glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    
+    // Enable point sprites - in OpenGL ES 3.0, point size is controlled by gl_PointSize
+    // No need to enable GL_PROGRAM_POINT_SIZE as it's always enabled
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    
     glBindVertexArray(particleVAO_);
+    
+    // Debug: verify state before draw
+    GLint currentVAO = 0;
+    glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &currentVAO);
+    aout << "Current VAO: " << currentVAO << " (expected: " << particleVAO_ << ")" << std::endl;
+    
+    GLint currentProgram = 0;
+    glGetIntegerv(GL_CURRENT_PROGRAM, &currentProgram);
+    aout << "Current program: " << currentProgram << " (expected: " << particleShader_->program() << ")" << std::endl;
+    
+    // Draw particles
     glDrawArrays(GL_POINTS, 0, NUM_PARTICLES);
+    
+    // Check for errors
+    GLenum error = glGetError();
+    if (error != GL_NO_ERROR) {
+        aout << "Error after particle draw: 0x" << std::hex << error << std::endl;
+    }
+    
     particleShader_->deactivate();
 }
