@@ -59,8 +59,6 @@ static constexpr int PARTICLES_PER_ROW = 1600;
 static constexpr int PARTICLES_PER_COL = 800;
 static constexpr int NUM_PARTICLES = PARTICLES_PER_ROW * PARTICLES_PER_COL;
 
-#define DEBUG_GRID 0  // Toggle debug grid
-
 Renderer::~Renderer() {
     if (display_ != EGL_NO_DISPLAY) {
         eglMakeCurrent(display_, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
@@ -85,7 +83,6 @@ void Renderer::render() {
     if (computeShader_ && particleShader_) {
         updateParticles();
         renderParticles();
-        renderDebugGrid();
     }
 
     auto swapResult = eglSwapBuffers(display_, surface_);
@@ -207,15 +204,6 @@ void Renderer::initRenderer() {
                 throw std::runtime_error("Failed to create compute shader");
             }
             
-            // Load grid shader
-            std::string gridVertSrc = Utility::loadAsset(assetManager, "shaders/grid.vert");
-            std::string gridFragSrc = Utility::loadAsset(assetManager, "shaders/grid.frag");
-            gridShader_ = std::unique_ptr<Shader>(
-                Shader::loadShader(gridVertSrc, gridFragSrc, "position", "", "uProjection"));
-            if (!gridShader_) {
-                throw std::runtime_error("Failed to create grid shader");
-            }
-            
         } catch (const std::exception& e) {
             throw std::runtime_error(std::string("Error loading shader files: ") + e.what());
         }
@@ -284,14 +272,6 @@ void Renderer::updateRenderArea() {
             particleShader_->deactivate();
         }
         
-        if (gridShader_) {
-            gridShader_->activate();
-            GLint projLoc = glGetUniformLocation(gridShader_->program(), "uProjection");
-            if (projLoc != -1) {
-                glUniformMatrix4fv(projLoc, 1, GL_FALSE, projectionMatrix);
-            }
-            gridShader_->deactivate();
-        }
     }
 }
 
@@ -510,67 +490,4 @@ void Renderer::renderParticles() {
     }
     
     particleShader_->deactivate();
-}
-
-void Renderer::renderDebugGrid() {
-#if DEBUG_GRID
-    if (!gridShader_) return;
-    
-    // Generate grid lines if not initialized
-    if (debugGridVAO_ == 0) {
-        std::vector<float> gridLines;
-        float spacing = 1.0f;    // One unit in world space
-        float extent = 5.0f;     // Show -5 to +5 in both directions
-        
-        // Generate horizontal lines
-        for (float y = -extent; y <= extent; y += spacing) {
-            gridLines.push_back(-extent);  // Start x
-            gridLines.push_back(y);        // y
-            gridLines.push_back(extent);   // End x
-            gridLines.push_back(y);        // y
-        }
-        
-        // Generate vertical lines
-        for (float x = -extent; x <= extent; x += spacing) {
-            gridLines.push_back(x);        // x
-            gridLines.push_back(-extent);  // Start y
-            gridLines.push_back(x);        // x
-            gridLines.push_back(extent);   // End y
-        }
-        
-        // Add origin marker point
-        gridLines.push_back(0.0f);
-        gridLines.push_back(0.0f);
-        
-        glGenVertexArrays(1, &debugGridVAO_);
-        glGenBuffers(1, &debugGridVBO_);
-        
-        glBindVertexArray(debugGridVAO_);
-        glBindBuffer(GL_ARRAY_BUFFER, debugGridVBO_);
-        glBufferData(GL_ARRAY_BUFFER, gridLines.size() * sizeof(float), 
-                    gridLines.data(), GL_STATIC_DRAW);
-        
-        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, nullptr);
-        glEnableVertexAttribArray(0);
-        
-        // Store total number of vertices (2 per line segment)
-        numGridLines_ = gridLines.size() / 2;  // Each vertex is vec2 (x,y)
-    }
-    
-    gridShader_->activate();
-    glBindVertexArray(debugGridVAO_);
-    
-    // Make lines brighter and thicker
-    GLint colorLoc = glGetUniformLocation(gridShader_->program(), "uColor");
-    
-    // Draw the grid lines
-    glUniform4f(colorLoc, 0.3f, 0.3f, 0.3f, 1.0f);  // Brighter white
-    glDrawArrays(GL_LINES, 0, numGridLines_ - 1);  // Draw all lines except last vertex pair
-    
-    // Draw origin point in red
-    glUniform4f(colorLoc, 1.0f, 0.0f, 0.0f, 1.0f);
-    glDrawArrays(GL_POINTS, numGridLines_ - 1, 1);  // Draw last vertex as point
-    
-    gridShader_->deactivate();
-#endif
 }

@@ -42,7 +42,6 @@ private:
     void initParticleSystem();
     void updateParticles();
     void renderParticles();
-    void renderDebugGrid();
 
     android_app *app_;
     EGLDisplay display_;
@@ -65,12 +64,6 @@ private:
     
     float worldWidth_ = 0.0f;
     float worldHeight_ = 0.0f;
-
-    // Debug grid members
-    GLuint debugGridVAO_ = 0;
-    GLuint debugGridVBO_ = 0;
-    GLuint numGridLines_ = 0;
-    std::unique_ptr<Shader> gridShader_;
 };
 
 #endif //ANDROIDGLINVESTIGATIONS_RENDERER_H
