@@ -12,14 +12,14 @@ layout(std430, binding = 1) buffer VelocityBuffer {
 };
 
 uniform vec2 gravityPoint;
-uniform float deltaTime;
+uniform float deltaTime;  // Already includes time scale from CPU
 
 // Precomputed constants
 const float ATTRACTION_STRENGTH = 15.0;
 const float TERMINAL_VELOCITY = 200.0;
 const float TERMINAL_VELOCITY_SQ = TERMINAL_VELOCITY * TERMINAL_VELOCITY;
-const float INV_TERMINAL_VEL = 1.0 / TERMINAL_VELOCITY;
-const float DAMPING = 0.9992;
+const float DAMPING = 0.9989;
+const float MAX_INFLUENCE_DIST_SQ = 100.0; // Early termination threshold
 
 void main() {
     uint index = gl_GlobalInvocationID.x;
@@ -33,6 +33,17 @@ void main() {
     // Calculate direction to gravity point using inversesqrt
     vec2 toGravity = gravityPoint - pos;
     float distSq = dot(toGravity, toGravity);
+    
+    // Early termination for particles too far from gravity point
+    if (distSq > MAX_INFLUENCE_DIST_SQ) {
+        // Just apply damping and minimal updates for distant particles
+        vel *= DAMPING;
+        pos += vel * deltaTime;
+        positions[index] = pos;
+        velocities[index] = vel;
+        return;
+    }
+    
     float invLen = inversesqrt(distSq);
     vec2 dir = toGravity * invLen;
     

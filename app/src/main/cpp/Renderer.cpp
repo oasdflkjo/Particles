@@ -58,8 +58,7 @@ static constexpr float kProjectionNearPlane = -1.f;
  */
 static constexpr float kProjectionFarPlane = 1.f;
 
-static constexpr int BASE_PARTICLES_PER_ROW = 1000;
-static constexpr int BASE_PARTICLES_PER_COL = 800;
+static constexpr int BASE_PARTICLE_COUNT = 120000;
 
 Renderer::~Renderer() {
     if (display_ != EGL_NO_DISPLAY) {
@@ -464,13 +463,18 @@ void Renderer::initParticleSystem() {
         refreshRate = 60.0f;  // Default to 60Hz if we couldn't get the rate
     }
 
-    // Scale particle count based on refresh rate
-    // Use 60Hz as baseline, scale up for higher refresh rates
-    float scaleFactor = refreshRate / 60.0f;
+    // Simple binary scaling - either 90fps capable (1.8x particles) or not
+    float scaleFactor = refreshRate >= 90.0f ? 4.0f : 1.0f;
     
-    // Calculate actual particle counts
-    int particlesPerRow = static_cast<int>(BASE_PARTICLES_PER_ROW * scaleFactor);
-    int particlesPerCol = static_cast<int>(BASE_PARTICLES_PER_COL * scaleFactor);
+    // Calculate total particles
+    numParticles_ = static_cast<int>(BASE_PARTICLE_COUNT * scaleFactor);
+    
+    // Calculate grid dimensions to maintain roughly 4:3 aspect ratio
+    float aspectRatio = 4.0f / 3.0f;
+    int particlesPerCol = static_cast<int>(sqrt(numParticles_ / aspectRatio));
+    int particlesPerRow = static_cast<int>(particlesPerCol * aspectRatio);
+    
+    // Adjust to match total count as closely as possible
     numParticles_ = particlesPerRow * particlesPerCol;
     
     aout << "Display refresh rate: " << refreshRate << " Hz" << std::endl;
@@ -557,9 +561,9 @@ void Renderer::updateParticles() {
     
     computeShader_->activate();
     
-    // Calculate delta time
+    // Calculate delta time and apply time scale
     auto currentTime = std::chrono::steady_clock::now();
-    float deltaTime = std::chrono::duration<float>(currentTime - lastFrameTime_).count();
+    float deltaTime = std::chrono::duration<float>(currentTime - lastFrameTime_).count() * timeScale_;
     lastFrameTime_ = currentTime;
     
     // Bind both buffers to their respective binding points

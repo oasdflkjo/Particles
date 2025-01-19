@@ -9,7 +9,7 @@
 #include "Shader.h"
 
 // Debug configuration flags
-#define DEBUG_FPS_COUNTER 1
+#define DEBUG_FPS_COUNTER 0
 
 #if DEBUG_FPS_COUNTER
 class FPSCounter {

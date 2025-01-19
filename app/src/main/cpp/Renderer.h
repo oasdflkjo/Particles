@@ -23,6 +23,7 @@ public:
             width_(0),
             height_(0),
             gravityPoint_{0.0f, 0.0f},
+            timeScale_(0.80f),
             positionBuffer_(0),
             velocityBuffer_(0),
             particleVAO_(0),
@@ -52,6 +53,7 @@ private:
     float worldWidth_;
     float worldHeight_;
     float gravityPoint_[2];
+    float timeScale_;  // Time scale factor (0.75 = 75% speed)
 
     // Particle system
     GLuint positionBuffer_;
