@@ -25,7 +25,8 @@ public:
             gravityPoint_{0.0f, 0.0f},
             positionBuffer_(0),
             velocityBuffer_(0),
-            particleVAO_(0) {
+            particleVAO_(0),
+            numParticles_(0) {
         lastFrameTime_ = std::chrono::steady_clock::now();
         initRenderer();
     }
@@ -56,6 +57,7 @@ private:
     GLuint positionBuffer_;
     GLuint velocityBuffer_;
     GLuint particleVAO_;
+    int numParticles_;
 
     // Shaders
     std::unique_ptr<Shader> computeShader_;

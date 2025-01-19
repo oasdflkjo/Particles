@@ -58,9 +58,8 @@ static constexpr float kProjectionNearPlane = -1.f;
  */
 static constexpr float kProjectionFarPlane = 1.f;
 
-static constexpr int PARTICLES_PER_ROW = 1000;
-static constexpr int PARTICLES_PER_COL = 800;
-static constexpr int NUM_PARTICLES = PARTICLES_PER_ROW * PARTICLES_PER_COL;
+static constexpr int BASE_PARTICLES_PER_ROW = 1000;
+static constexpr int BASE_PARTICLES_PER_COL = 800;
 
 Renderer::~Renderer() {
     if (display_ != EGL_NO_DISPLAY) {
@@ -79,8 +78,56 @@ Renderer::~Renderer() {
 }
 
 void Renderer::render() {
-    // Frame timing for 120 FPS target (8.33ms per frame)
-    static const auto targetFrameTime = std::chrono::nanoseconds(1000000000 / 120); // 8.33ms in ns
+    static float targetFPS = 0.0f;
+    static const auto getRefreshRate = [this]() -> float {
+        if (app_ && app_->activity && app_->activity->vm) {
+            JNIEnv* env;
+            app_->activity->vm->AttachCurrentThread(&env, nullptr);
+            
+            // Get the NativeActivity instance
+            jobject activity = app_->activity->javaGameActivity;
+            
+            // Get the WindowManager service
+            jclass activityClass = env->FindClass("android/app/NativeActivity");
+            jmethodID getWindowManager = env->GetMethodID(activityClass, "getWindowManager", "()Landroid/view/WindowManager;");
+            jobject windowManager = env->CallObjectMethod(activity, getWindowManager);
+            
+            // Get the default display
+            jclass windowManagerClass = env->FindClass("android/view/WindowManager");
+            jmethodID getDefaultDisplay = env->GetMethodID(windowManagerClass, "getDefaultDisplay", "()Landroid/view/Display;");
+            jobject display = env->CallObjectMethod(windowManager, getDefaultDisplay);
+            
+            // Get the refresh rate
+            jclass displayClass = env->FindClass("android/view/Display");
+            jmethodID getRefreshRate = env->GetMethodID(displayClass, "getRefreshRate", "()F");
+            float rate = env->CallFloatMethod(display, getRefreshRate);
+            
+            // Clean up local references
+            env->DeleteLocalRef(displayClass);
+            env->DeleteLocalRef(display);
+            env->DeleteLocalRef(windowManagerClass);
+            env->DeleteLocalRef(windowManager);
+            env->DeleteLocalRef(activityClass);
+            
+            app_->activity->vm->DetachCurrentThread();
+            
+            if (rate > 0.0f) {
+                aout << "Display refresh rate: " << rate << " Hz" << std::endl;
+                return rate;
+            }
+        }
+        // Default to 60 Hz if we can't get the refresh rate
+        aout << "Could not get refresh rate, defaulting to 60 Hz" << std::endl;
+        return 60.0f;
+    };
+    
+    // Initialize target FPS on first frame
+    if (targetFPS == 0.0f) {
+        targetFPS = getRefreshRate();
+    }
+    
+    // Frame timing based on display refresh rate
+    static const auto targetFrameTime = std::chrono::nanoseconds(static_cast<long long>(1000000000.0f / targetFPS));
     static auto lastFrameTime = std::chrono::steady_clock::now();
     
     // Calculate time since last frame
@@ -385,7 +432,51 @@ void Renderer::handleInput() {
 }
 
 void Renderer::initParticleSystem() {
-    aout << "Creating particle buffers for " << NUM_PARTICLES << " particles" << std::endl;
+    // Get the refresh rate first
+    float refreshRate = 0.0f;
+    if (app_ && app_->activity && app_->activity->vm) {
+        JNIEnv* env;
+        app_->activity->vm->AttachCurrentThread(&env, nullptr);
+        
+        jobject activity = app_->activity->javaGameActivity;
+        jclass activityClass = env->FindClass("android/app/NativeActivity");
+        jmethodID getWindowManager = env->GetMethodID(activityClass, "getWindowManager", "()Landroid/view/WindowManager;");
+        jobject windowManager = env->CallObjectMethod(activity, getWindowManager);
+        
+        jclass windowManagerClass = env->FindClass("android/view/WindowManager");
+        jmethodID getDefaultDisplay = env->GetMethodID(windowManagerClass, "getDefaultDisplay", "()Landroid/view/Display;");
+        jobject display = env->CallObjectMethod(windowManager, getDefaultDisplay);
+        
+        jclass displayClass = env->FindClass("android/view/Display");
+        jmethodID getRefreshRate = env->GetMethodID(displayClass, "getRefreshRate", "()F");
+        refreshRate = env->CallFloatMethod(display, getRefreshRate);
+        
+        env->DeleteLocalRef(displayClass);
+        env->DeleteLocalRef(display);
+        env->DeleteLocalRef(windowManagerClass);
+        env->DeleteLocalRef(windowManager);
+        env->DeleteLocalRef(activityClass);
+        
+        app_->activity->vm->DetachCurrentThread();
+    }
+    
+    if (refreshRate <= 0.0f) {
+        refreshRate = 60.0f;  // Default to 60Hz if we couldn't get the rate
+    }
+
+    // Scale particle count based on refresh rate
+    // Use 60Hz as baseline, scale up for higher refresh rates
+    float scaleFactor = refreshRate / 60.0f;
+    
+    // Calculate actual particle counts
+    int particlesPerRow = static_cast<int>(BASE_PARTICLES_PER_ROW * scaleFactor);
+    int particlesPerCol = static_cast<int>(BASE_PARTICLES_PER_COL * scaleFactor);
+    numParticles_ = particlesPerRow * particlesPerCol;
+    
+    aout << "Display refresh rate: " << refreshRate << " Hz" << std::endl;
+    aout << "Particle scale factor: " << scaleFactor << std::endl;
+    aout << "Creating particle buffers for " << numParticles_ << " particles" << std::endl;
+    aout << "Grid size: " << particlesPerRow << " x " << particlesPerCol << std::endl;
     
     // Create separate buffers for positions and velocities
     glGenBuffers(1, &positionBuffer_);
@@ -395,25 +486,21 @@ void Renderer::initParticleSystem() {
     float worldHeight = 10.0f;  // -5 to +5 vertically (matches our grid)
     float worldWidth = worldHeight * (float)width_ / height_;  // Maintain aspect ratio
     
-    // Debug output
-    aout << "World dimensions: " << worldWidth << " x " << worldHeight << std::endl;
-    aout << "Particles: " << PARTICLES_PER_ROW << " x " << PARTICLES_PER_COL << std::endl;
-    
     // Calculate spacing to distribute particles evenly
-    float spacingY = worldHeight / (PARTICLES_PER_COL - 1);
-    float spacingX = worldWidth / (PARTICLES_PER_ROW - 1);
+    float spacingY = worldHeight / (particlesPerCol - 1);
+    float spacingX = worldWidth / (particlesPerRow - 1);
     
     // Calculate start positions to center the grid
     float startX = -worldWidth / 2.0f;
     float startY = -worldHeight / 2.0f;
     
     // Allocate aligned memory for positions and velocities
-    alignas(16) std::vector<float> positions(NUM_PARTICLES * 2);
-    alignas(16) std::vector<float> velocities(NUM_PARTICLES * 2);
+    alignas(16) std::vector<float> positions(numParticles_ * 2);
+    alignas(16) std::vector<float> velocities(numParticles_ * 2);
     
-    for(int i = 0; i < NUM_PARTICLES; i++) {
-        int row = i / PARTICLES_PER_ROW;
-        int col = i % PARTICLES_PER_ROW;
+    for(int i = 0; i < numParticles_; i++) {
+        int row = i / particlesPerRow;
+        int col = i % particlesPerRow;
         
         // Position relative to visible world space
         float xPos = startX + (col * spacingX);
@@ -492,7 +579,7 @@ void Renderer::updateParticles() {
     }
     
     // Dispatch compute shader
-    int numGroups = (NUM_PARTICLES + 255) / 256;
+    int numGroups = (numParticles_ + 255) / 256;
     glDispatchCompute(numGroups, 1, 1);
     
     // Ensure compute shader writes are visible
@@ -512,7 +599,7 @@ void Renderer::renderParticles() {
     glBindVertexArray(particleVAO_);
     
     // Draw particles
-    glDrawArrays(GL_POINTS, 0, NUM_PARTICLES);
+    glDrawArrays(GL_POINTS, 0, numParticles_);
     
     // Check for errors
     GLenum error = glGetError();

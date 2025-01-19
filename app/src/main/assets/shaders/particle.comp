@@ -15,7 +15,7 @@ uniform vec2 gravityPoint;
 uniform float deltaTime;
 
 // Precomputed constants
-const float ATTRACTION_STRENGTH = 20.0;
+const float ATTRACTION_STRENGTH = 15.0;
 const float TERMINAL_VELOCITY = 200.0;
 const float TERMINAL_VELOCITY_SQ = TERMINAL_VELOCITY * TERMINAL_VELOCITY;
 const float INV_TERMINAL_VEL = 1.0 / TERMINAL_VELOCITY;
