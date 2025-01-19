@@ -6,6 +6,9 @@
 #include <vector>
 #include <android/imagedecoder.h>
 #include <chrono>
+#include <sstream>
+#include <iomanip>
+#include <thread>
 
 #include "AndroidOut.h"
 #include "Shader.h"
@@ -55,7 +58,7 @@ static constexpr float kProjectionNearPlane = -1.f;
  */
 static constexpr float kProjectionFarPlane = 1.f;
 
-static constexpr int PARTICLES_PER_ROW = 1600;
+static constexpr int PARTICLES_PER_ROW = 1000;
 static constexpr int PARTICLES_PER_COL = 800;
 static constexpr int NUM_PARTICLES = PARTICLES_PER_ROW * PARTICLES_PER_COL;
 
@@ -76,14 +79,40 @@ Renderer::~Renderer() {
 }
 
 void Renderer::render() {
+    // Frame timing for 120 FPS target (8.33ms per frame)
+    static const auto targetFrameTime = std::chrono::nanoseconds(1000000000 / 120); // 8.33ms in ns
+    static auto lastFrameTime = std::chrono::steady_clock::now();
+    
+    // Calculate time since last frame
+    auto now = std::chrono::steady_clock::now();
+    auto frameTime = now - lastFrameTime;
+    
+    // If we're ahead of schedule, spin until we hit our target
+    while (frameTime < targetFrameTime) {
+        now = std::chrono::steady_clock::now();
+        frameTime = now - lastFrameTime;
+    }
+    
+    lastFrameTime = now;
+    
     updateRenderArea();
     
+#if DEBUG_FPS_COUNTER
+    fpsCounter_.update();
+#endif
+    
+    // Clear to black
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);  // Pure black background
     glClear(GL_COLOR_BUFFER_BIT);
     
     if (computeShader_ && particleShader_) {
         updateParticles();
         renderParticles();
     }
+
+#if DEBUG_FPS_COUNTER
+    fpsCounter_.render(worldWidth_, worldHeight_);
+#endif
 
     auto swapResult = eglSwapBuffers(display_, surface_);
     assert(swapResult == EGL_TRUE);
@@ -95,7 +124,7 @@ void Renderer::initRenderer() {
     // Choose your render attributes
     constexpr EGLint attribs[] = {
             EGL_RENDERABLE_TYPE, EGL_OPENGL_ES3_BIT,
-            EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
+            EGL_SURFACE_TYPE, EGL_WINDOW_BIT | EGL_SWAP_BEHAVIOR_PRESERVED_BIT,
             EGL_BLUE_SIZE, 8,
             EGL_GREEN_SIZE, 8,
             EGL_RED_SIZE, 8,
@@ -154,6 +183,11 @@ void Renderer::initRenderer() {
         return;
     }
 
+    // Disable VSync
+    if (!eglSwapInterval(display_, 0)) {
+        aout << "Failed to set swap interval 0, error: " << eglGetError() << std::endl;
+    }
+
     // Print OpenGL info
     aout << "OpenGL Vendor: " << glGetString(GL_VENDOR) << std::endl;
     aout << "OpenGL Renderer: " << glGetString(GL_RENDERER) << std::endl;
@@ -172,7 +206,7 @@ void Renderer::initRenderer() {
     height_ = -1;
 
     // Setup GL state first
-    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);  // Pure black background (changed from dark blue)
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);  // Pure black background
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
@@ -203,19 +237,15 @@ void Renderer::initRenderer() {
             if (!computeShader_) {
                 throw std::runtime_error("Failed to create compute shader");
             }
+
+#if DEBUG_FPS_COUNTER
+            // Initialize FPS counter
+            fpsCounter_.init(app_);
+#endif
             
         } catch (const std::exception& e) {
             throw std::runtime_error(std::string("Error loading shader files: ") + e.what());
         }
-
-        // Test shaders
-        particleShader_->activate();
-        particleShader_->deactivate();
-        aout << "Particle shader loaded and tested" << std::endl;
-
-        computeShader_->activate();
-        computeShader_->deactivate();
-        aout << "Compute shader loaded and tested" << std::endl;
 
         // Initialize particle system
         initParticleSystem();
@@ -262,7 +292,7 @@ void Renderer::updateRenderArea() {
         worldWidth_ = worldWidth;
         worldHeight_ = worldHeight;
         
-        // Update projection for both shaders
+        // Update projection for particle shader
         if (particleShader_) {
             particleShader_->activate();
             GLint projLoc = glGetUniformLocation(particleShader_->program(), "uProjection");
@@ -271,7 +301,18 @@ void Renderer::updateRenderArea() {
             }
             particleShader_->deactivate();
         }
-        
+
+#if DEBUG_FPS_COUNTER
+        // Update projection for FPS counter shader
+        if (fpsCounter_.getShader()) {
+            fpsCounter_.getShader()->activate();
+            GLint projLoc = glGetUniformLocation(fpsCounter_.getShader()->program(), "uProjection");
+            if (projLoc != -1) {
+                glUniformMatrix4fv(projLoc, 1, GL_FALSE, projectionMatrix);
+            }
+            fpsCounter_.getShader()->deactivate();
+        }
+#endif
     }
 }
 
@@ -429,11 +470,9 @@ void Renderer::updateParticles() {
     
     computeShader_->activate();
     
-    // Calculate delta time with 120 FPS cap
+    // Calculate delta time
     auto currentTime = std::chrono::steady_clock::now();
     float deltaTime = std::chrono::duration<float>(currentTime - lastFrameTime_).count();
-    const float targetFrameTime = 1.0f / 120.0f;
-    deltaTime = std::min(deltaTime, targetFrameTime);
     lastFrameTime_ = currentTime;
     
     // Bind both buffers to their respective binding points
@@ -465,10 +504,6 @@ void Renderer::renderParticles() {
     if (!particleShader_) return;
     
     particleShader_->activate();
-    
-    // Clear to black
-    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);  // Pure black background
-    glClear(GL_COLOR_BUFFER_BIT);
     
     // Use alpha blending instead of additive
     glEnable(GL_BLEND);

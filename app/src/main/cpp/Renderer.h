@@ -6,9 +6,10 @@
 #include <memory>
 #include <vector>
 #include <chrono>
-
+#include <string>
 #include "Model.h"
 #include "Shader.h"
+#include "DebugUtils.h"
 
 struct android_app;
 
@@ -24,10 +25,7 @@ public:
             gravityPoint_{0.0f, 0.0f},
             positionBuffer_(0),
             velocityBuffer_(0),
-            particleVAO_(0),
-            shader_(nullptr),
-            computeShader_(nullptr),
-            particleShader_(nullptr) {
+            particleVAO_(0) {
         lastFrameTime_ = std::chrono::steady_clock::now();
         initRenderer();
     }
@@ -48,26 +46,27 @@ private:
     EGLDisplay display_;
     EGLSurface surface_;
     EGLContext context_;
-    EGLint width_;
-    EGLint height_;
+    GLint width_;
+    GLint height_;
+    float worldWidth_;
+    float worldHeight_;
+    float gravityPoint_[2];
 
-    std::unique_ptr<Shader> shader_;
-    std::vector<Model> models_;
-
-    std::unique_ptr<Shader> computeShader_;
-    std::unique_ptr<Shader> particleShader_;
-    
-    // Separate buffers for positions and velocities (SoA)
+    // Particle system
     GLuint positionBuffer_;
     GLuint velocityBuffer_;
     GLuint particleVAO_;
-    float gravityPoint_[2];
-    
-    using TimePoint = std::chrono::steady_clock::time_point;
-    TimePoint lastFrameTime_;
-    
-    float worldWidth_ = 0.0f;
-    float worldHeight_ = 0.0f;
+
+    // Shaders
+    std::unique_ptr<Shader> computeShader_;
+    std::unique_ptr<Shader> particleShader_;
+
+    // Timing
+    std::chrono::steady_clock::time_point lastFrameTime_;
+
+#if DEBUG_FPS_COUNTER
+    FPSCounter fpsCounter_;
+#endif
 };
 
 #endif //ANDROIDGLINVESTIGATIONS_RENDERER_H

@@ -60,6 +60,9 @@ public:
     void checkError(const char* operation) const;
 
 private:
+    static GLuint compileShader(GLenum type, const std::string &source);
+    static GLuint linkProgram(GLuint vertexShader, GLuint fragmentShader);
+
     GLuint program_;
     GLint position_;
     GLint uv_;
