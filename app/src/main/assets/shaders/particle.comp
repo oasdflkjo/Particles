@@ -19,7 +19,6 @@ const float ATTRACTION_STRENGTH = 15.0;
 const float TERMINAL_VELOCITY = 200.0;
 const float TERMINAL_VELOCITY_SQ = TERMINAL_VELOCITY * TERMINAL_VELOCITY;
 const float DAMPING = 0.9989;
-const float MAX_INFLUENCE_DIST_SQ = 100.0; // Early termination threshold
 
 void main() {
     uint index = gl_GlobalInvocationID.x;
@@ -32,22 +31,10 @@ void main() {
     
     // Calculate direction to gravity point using inversesqrt
     vec2 toGravity = gravityPoint - pos;
-    float distSq = dot(toGravity, toGravity);
-    
-    // Early termination for particles too far from gravity point
-    if (distSq > MAX_INFLUENCE_DIST_SQ) {
-        // Just apply damping and minimal updates for distant particles
-        vel *= DAMPING;
-        pos += vel * deltaTime;
-        positions[index] = pos;
-        velocities[index] = vel;
-        return;
-    }
-    
-    float invLen = inversesqrt(distSq);
+    float invLen = inversesqrt(dot(toGravity, toGravity));
     vec2 dir = toGravity * invLen;
     
-    // Apply force with deltaTime
+    // Apply uniform force with deltaTime (no distance scaling)
     vel += dir * (ATTRACTION_STRENGTH * deltaTime);
     
     // Optimized terminal velocity check and clamping

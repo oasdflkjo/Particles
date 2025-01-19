@@ -325,18 +325,18 @@ void Renderer::updateRenderArea() {
         // Calculate orthographic projection matrix
         float projectionMatrix[16] = {0};
         
-        // Set world view to match our grid (-5 to +5)
-        float worldHeight = 10.0f;  // -5 to +5 in Y
-        float worldWidth = worldHeight * (float)width_ / height_;
+        // Use aspect ratio for scaling, but maintain original zoom level (was -5 to +5 = 10 units total)
+        float aspectRatio = (float)width_ / height_;
+        float baseScale = 2.0f / 20.0f;  // Changed from 10.0f to 20.0f to zoom out
         
-        // OpenGL projection matrix centered at 0,0
-        projectionMatrix[0] = 2.0f / worldWidth;   // Scale X
-        projectionMatrix[5] = 2.0f / worldHeight;  // Scale Y
+        // Scale Y by baseScale and X by baseScale * aspect ratio to maintain proper display proportions
+        projectionMatrix[0] = baseScale / aspectRatio;  // Scale X
+        projectionMatrix[5] = baseScale;                // Scale Y
         projectionMatrix[10] = -1.0f;
         projectionMatrix[15] = 1.0f;
         
-        worldWidth_ = worldWidth;
-        worldHeight_ = worldHeight;
+        worldWidth_ = FLT_MAX;   // Use float limits instead of artificial bounds
+        worldHeight_ = FLT_MAX;
         
         // Update projection for particle shader
         if (particleShader_) {
@@ -381,9 +381,11 @@ void Renderer::handleInput() {
         auto x = GameActivityPointerAxes_getX(&pointer);
         auto y = GameActivityPointerAxes_getY(&pointer);
 
-        // Convert screen coordinates to world coordinates
-        float worldX = (x / width_ - 0.5f) * worldWidth_;
-        float worldY = -(y / height_ - 0.5f) * worldHeight_;  // Flip Y coordinate
+        // Convert screen coordinates to world coordinates using the same scale as our projection matrix
+        float baseScale = 20.0f;  // Changed from 10.0f to 20.0f to match projection matrix
+        float aspectRatio = (float)width_ / height_;
+        float worldX = ((x / width_ - 0.5f) * baseScale * aspectRatio);
+        float worldY = -((y / height_ - 0.5f) * baseScale);  // Flip Y coordinate
         
         switch (action & AMOTION_EVENT_ACTION_MASK) {
             case AMOTION_EVENT_ACTION_DOWN:
@@ -486,17 +488,16 @@ void Renderer::initParticleSystem() {
     glGenBuffers(1, &positionBuffer_);
     glGenBuffers(1, &velocityBuffer_);
     
-    // Match particle grid to our visible world coordinates
-    float worldHeight = 10.0f;  // -5 to +5 vertically (matches our grid)
-    float worldWidth = worldHeight * (float)width_ / height_;  // Maintain aspect ratio
+    // Initialize particles in a grid pattern with a reasonable initial spread
+    float initialSpread = 16.0f;  // Match our view area (20 units tall, but leave some margin)
     
     // Calculate spacing to distribute particles evenly
-    float spacingY = worldHeight / (particlesPerCol - 1);
-    float spacingX = worldWidth / (particlesPerRow - 1);
+    float spacingY = initialSpread / (particlesPerCol - 1);
+    float spacingX = (initialSpread * aspectRatio) / (particlesPerRow - 1);
     
     // Calculate start positions to center the grid
-    float startX = -worldWidth / 2.0f;
-    float startY = -worldHeight / 2.0f;
+    float startX = -initialSpread * aspectRatio / 2.0f;
+    float startY = -initialSpread / 2.0f;
     
     // Allocate aligned memory for positions and velocities
     alignas(16) std::vector<float> positions(numParticles_ * 2);
@@ -506,13 +507,13 @@ void Renderer::initParticleSystem() {
         int row = i / particlesPerRow;
         int col = i % particlesPerRow;
         
-        // Position relative to visible world space
+        // Position relative to center
         float xPos = startX + (col * spacingX);
         float yPos = startY + (row * spacingY);
         
-        // Very small initial velocities
+        // Initial velocities scaled to view area
         float randAngle = (float)rand() / RAND_MAX * 2.0f * M_PI;
-        float randSpeed = ((float)rand() / RAND_MAX * 0.5f);
+        float randSpeed = ((float)rand() / RAND_MAX * 2.0f);  // Adjusted for view area
         
         // Store in SoA format
         positions[i * 2] = xPos;
