@@ -14,6 +14,7 @@ FPSCounter::FPSCounter()
     , frameCount_(0)
     , lastFPSUpdate_(std::chrono::steady_clock::now())
     , currentFPS_(0.0f) {
+    aout << "FPSCounter constructed" << std::endl;
 }
 
 FPSCounter::~FPSCounter() {
@@ -28,6 +29,7 @@ FPSCounter::~FPSCounter() {
 }
 
 void FPSCounter::init(android_app* app) {
+    aout << "Initializing FPS counter..." << std::endl;
     initTextRendering(app);
 }
 
@@ -65,6 +67,8 @@ void FPSCounter::render(float worldWidth, float worldHeight) {
     GLint colorLoc = glGetUniformLocation(textShader_->program(), "uColor");
     if (colorLoc != -1) {
         glUniform4f(colorLoc, 0.0f, 1.0f, 1.0f, 1.0f);  // Bright cyan color
+    } else {
+        aout << "Warning: Could not find uColor uniform" << std::endl;
     }
 
     // Draw each digit of the FPS value
@@ -77,6 +81,11 @@ void FPSCounter::render(float worldWidth, float worldHeight) {
     float posY = worldHeight * 0.4f;                // Near top of screen
     
     GLint digitLoc = glGetUniformLocation(textShader_->program(), "uDigit");
+    if (digitLoc == -1) {
+        aout << "Warning: Could not find uDigit uniform" << std::endl;
+    }
+    
+    aout << "Rendering FPS: " << fpsText_ << " at position (" << startX << ", " << posY << ")" << std::endl;
     
     // Draw each character in the FPS text
     for (size_t i = 0; i < fpsText_.length(); i++) {
@@ -88,11 +97,15 @@ void FPSCounter::render(float worldWidth, float worldHeight) {
         if (posLoc != -1) {
             float posX = startX + (digitWidth + spacing) * static_cast<float>(i);
             glUniform2f(posLoc, posX, posY);
+        } else {
+            aout << "Warning: Could not find uPosition uniform" << std::endl;
         }
         
         GLint scaleLoc = glGetUniformLocation(textShader_->program(), "uScale");
         if (scaleLoc != -1) {
             glUniform2f(scaleLoc, digitWidth, digitWidth * 1.5f);  // Keep aspect ratio
+        } else {
+            aout << "Warning: Could not find uScale uniform" << std::endl;
         }
         
         // Set the digit value
@@ -106,10 +119,18 @@ void FPSCounter::render(float worldWidth, float worldHeight) {
         glBindVertexArray(0);
     }
     
+    // Check for any OpenGL errors
+    GLenum error = glGetError();
+    if (error != GL_NO_ERROR) {
+        aout << "OpenGL error during FPS render: 0x" << std::hex << error << std::endl;
+    }
+    
     textShader_->deactivate();
 }
 
 void FPSCounter::initTextRendering(android_app* app) {
+    aout << "Initializing text rendering..." << std::endl;
+    
     // Create a simple quad for text rendering
     float vertices[] = {
         0.0f, 0.0f,  // Bottom-left
@@ -137,10 +158,23 @@ void FPSCounter::initTextRendering(android_app* app) {
         std::string vertSrc = Utility::loadAsset(assetManager, "shaders/text.vert");
         std::string fragSrc = Utility::loadAsset(assetManager, "shaders/text.frag");
         
+        aout << "Loading text shaders..." << std::endl;
         textShader_ = std::unique_ptr<Shader>(
             Shader::loadShader(vertSrc, fragSrc, "position", "", "uProjection"));
+            
+        if (textShader_) {
+            aout << "Text shader created successfully" << std::endl;
+        } else {
+            aout << "Failed to create text shader!" << std::endl;
+        }
     } catch (const std::exception& e) {
         aout << "Failed to load text shaders: " << e.what() << std::endl;
+    }
+    
+    // Check for any OpenGL errors
+    GLenum error = glGetError();
+    if (error != GL_NO_ERROR) {
+        aout << "OpenGL error during text init: 0x" << std::hex << error << std::endl;
     }
 }
 

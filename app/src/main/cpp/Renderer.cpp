@@ -354,7 +354,13 @@ void Renderer::updateRenderArea() {
             fpsCounter_.getShader()->activate();
             GLint projLoc = glGetUniformLocation(fpsCounter_.getShader()->program(), "uProjection");
             if (projLoc != -1) {
-                glUniformMatrix4fv(projLoc, 1, GL_FALSE, projectionMatrix);
+                // Use an orthographic projection that matches the screen coordinates
+                float orthoMatrix[16] = {0};
+                orthoMatrix[0] = 2.0f / width_;
+                orthoMatrix[5] = 2.0f / height_;
+                orthoMatrix[10] = -1.0f;
+                orthoMatrix[15] = 1.0f;
+                glUniformMatrix4fv(projLoc, 1, GL_FALSE, orthoMatrix);
             }
             fpsCounter_.getShader()->deactivate();
         }
