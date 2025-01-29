@@ -10,23 +10,35 @@ out vec4 particleColor;
 
 void main() {
     gl_Position = uProjection * vec4(position, 0.0, 1.0);
-    gl_PointSize = 3.0;
+    
+    // Calculate a size that looks good in our projection
+    float baseSize = 14.0;  // Base size in pixels (slightly increased from 12.0)
+    gl_PointSize = baseSize;
+    
     fragVelocity = velocity;
     
     float speed = length(velocity);
     
     // Balance color sensitivity to speed
-    float normalizedSpeed = speed / 20.0;  // Increased from 15.0 for more gradual change
+    float normalizedSpeed = speed / 20.0;  // Adjust for speed range
     
-    // Gentle curve for smooth transition
-    normalizedSpeed = pow(normalizedSpeed, 1.2);  // Slightly stronger curve
+    // More aggressive curve for later transition
+    normalizedSpeed = pow(normalizedSpeed, 2.0);  // Stronger curve to delay transition
     
-    // More balanced color transition
+    // Base color: #8b5cf6 (deeper magenta)
+    vec3 baseColor = vec3(139.0/255.0, 92.0/255.0, 246.0/255.0);
+    
+    // Target color: #6d28d9 (darker magenta that fits aesthetic)
+    vec3 targetColor = vec3(109.0/255.0, 40.0/255.0, 217.0/255.0);
+    
+    // Mix between base color and target color based on speed
+    // Adjust smoothstep range to make darker color appear only at higher speeds
     vec3 color = mix(
-        vec3(0.0, 0.8, 1.0),     // Bright neon blue (#00CCFF)
-        vec3(1.0, 0.2, 0.8),     // Bright neon pink (#FF33CC)
-        smoothstep(0.15, 0.7, normalizedSpeed)  // Wider, more gradual transition
+        baseColor,           // Base magenta
+        targetColor,         // Darker magenta
+        smoothstep(0.6, 0.9, normalizedSpeed)  // Much later transition to darker color
     );
     
-    particleColor = vec4(color, 1.0);
+    // Use 0.9 alpha for base particles
+    particleColor = vec4(color, 0.9);
 } 

@@ -58,7 +58,7 @@ static constexpr float kProjectionNearPlane = -1.f;
  */
 static constexpr float kProjectionFarPlane = 1.f;
 
-static constexpr int BASE_PARTICLE_COUNT = 120000;
+static constexpr int BASE_PARTICLE_COUNT = 100000;
 
 Renderer::~Renderer() {
     if (display_ != EGL_NO_DISPLAY) {
@@ -147,8 +147,8 @@ void Renderer::render() {
     fpsCounter_.update();
 #endif
     
-    // Clear to black
-    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);  // Pure black background
+    // Clear to background color
+    glClearColor(17.0f/255.0f, 24.0f/255.0f, 39.0f/255.0f, 1.0f);  // Dark background #111827 (17, 24, 39)
     glClear(GL_COLOR_BUFFER_BIT);
     
     if (computeShader_ && particleShader_) {
@@ -252,10 +252,10 @@ void Renderer::initRenderer() {
     height_ = -1;
 
     // Setup GL state first
-    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);  // Pure black background
+    glClearColor(17.0f/255.0f, 24.0f/255.0f, 39.0f/255.0f, 1.0f);  // Dark background #111827 (17, 24, 39)
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
+    
     // Initialize shaders with error checking
     try {
         auto assetManager = app_->activity->assetManager;
@@ -466,7 +466,7 @@ void Renderer::initParticleSystem() {
     }
 
     // Simple binary scaling - either 90fps capable (1.8x particles) or not
-    float scaleFactor = refreshRate >= 90.0f ? 4.0f : 1.0f;
+    float scaleFactor = refreshRate >= 90.0f ? 2.0f : 1.0f;
     
     // Calculate total particles
     numParticles_ = static_cast<int>(BASE_PARTICLE_COUNT * scaleFactor);

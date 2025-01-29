@@ -15,10 +15,10 @@ uniform vec2 gravityPoint;
 uniform float deltaTime;  // Already includes time scale from CPU
 
 // Precomputed constants
-const float ATTRACTION_STRENGTH = 15.0;
-const float TERMINAL_VELOCITY = 200.0;
+const float ATTRACTION_STRENGTH = 9.0;
+const float TERMINAL_VELOCITY = 9.5;
 const float TERMINAL_VELOCITY_SQ = TERMINAL_VELOCITY * TERMINAL_VELOCITY;
-const float DAMPING = 0.9989;
+const float DAMPING = 0.99999;
 
 void main() {
     uint index = gl_GlobalInvocationID.x;
