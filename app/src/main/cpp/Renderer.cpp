@@ -143,10 +143,6 @@ void Renderer::render() {
     
     updateRenderArea();
     
-#if DEBUG_FPS_COUNTER
-    fpsCounter_.update();
-#endif
-    
     // Clear to background color
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);  // Pure black background
     glClear(GL_COLOR_BUFFER_BIT);
@@ -155,10 +151,6 @@ void Renderer::render() {
         updateParticles();
         renderParticles();
     }
-
-#if DEBUG_FPS_COUNTER
-    fpsCounter_.render(worldWidth_, worldHeight_);
-#endif
 
     auto swapResult = eglSwapBuffers(display_, surface_);
     assert(swapResult == EGL_TRUE);
@@ -283,11 +275,6 @@ void Renderer::initRenderer() {
             if (!computeShader_) {
                 throw std::runtime_error("Failed to create compute shader");
             }
-
-#if DEBUG_FPS_COUNTER
-            // Initialize FPS counter
-            fpsCounter_.init(app_);
-#endif
             
         } catch (const std::exception& e) {
             throw std::runtime_error(std::string("Error loading shader files: ") + e.what());
@@ -347,24 +334,6 @@ void Renderer::updateRenderArea() {
             }
             particleShader_->deactivate();
         }
-
-#if DEBUG_FPS_COUNTER
-        // Update projection for FPS counter shader
-        if (fpsCounter_.getShader()) {
-            fpsCounter_.getShader()->activate();
-            GLint projLoc = glGetUniformLocation(fpsCounter_.getShader()->program(), "uProjection");
-            if (projLoc != -1) {
-                // Use an orthographic projection that matches the screen coordinates
-                float orthoMatrix[16] = {0};
-                orthoMatrix[0] = 2.0f / width_;
-                orthoMatrix[5] = 2.0f / height_;
-                orthoMatrix[10] = -1.0f;
-                orthoMatrix[15] = 1.0f;
-                glUniformMatrix4fv(projLoc, 1, GL_FALSE, orthoMatrix);
-            }
-            fpsCounter_.getShader()->deactivate();
-        }
-#endif
     }
 }
 

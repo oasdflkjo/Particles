@@ -9,7 +9,6 @@
 #include <string>
 #include "Model.h"
 #include "Shader.h"
-#include "DebugUtils.h"
 
 struct android_app;
 
@@ -67,10 +66,6 @@ private:
 
     // Timing
     std::chrono::steady_clock::time_point lastFrameTime_;
-
-#if DEBUG_FPS_COUNTER
-    FPSCounter fpsCounter_;
-#endif
 };
 
 #endif //ANDROIDGLINVESTIGATIONS_RENDERER_H

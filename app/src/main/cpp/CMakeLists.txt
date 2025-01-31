@@ -18,8 +18,7 @@ add_library(particles SHARED
         Renderer.cpp
         Shader.cpp
         TextureAsset.cpp
-        Utility.cpp
-        DebugUtils.cpp)
+        Utility.cpp)
 
 # Searches for a package provided by the game activity dependency
 find_package(game-activity REQUIRED CONFIG)
@@ -40,8 +39,19 @@ set_target_properties(particles PROPERTIES
     CXX_EXTENSIONS NO
 )
 
-# Add compiler definitions
+# Add compiler definitions and optimization flags
 target_compile_definitions(particles PRIVATE
     ANDROID
     GLM_FORCE_SIZE_T_LENGTH
 )
+
+# Add optimization flags for Release builds
+if(CMAKE_BUILD_TYPE MATCHES Release)
+    target_compile_options(particles PRIVATE
+        -O3                     # Maximum optimization
+        -flto                   # Link-time optimization
+        -ffast-math             # Fast math operations
+        -fstrict-aliasing      # Enable strict aliasing
+        -fomit-frame-pointer   # Omit frame pointer
+    )
+endif()
