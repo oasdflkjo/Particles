@@ -18,7 +18,7 @@ uniform float deltaTime;  // Already includes time scale from CPU
 const float ATTRACTION_STRENGTH = 9.0;
 const float TERMINAL_VELOCITY = 9.5;
 const float TERMINAL_VELOCITY_SQ = TERMINAL_VELOCITY * TERMINAL_VELOCITY;
-const float DAMPING = 0.99999;
+const float DAMPING = 0.99988;
 
 void main() {
     uint index = gl_GlobalInvocationID.x;

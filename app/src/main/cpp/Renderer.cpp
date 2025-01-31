@@ -148,7 +148,7 @@ void Renderer::render() {
 #endif
     
     // Clear to background color
-    glClearColor(17.0f/255.0f, 24.0f/255.0f, 39.0f/255.0f, 1.0f);  // Dark background #111827 (17, 24, 39)
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);  // Pure black background
     glClear(GL_COLOR_BUFFER_BIT);
     
     if (computeShader_ && particleShader_) {
@@ -252,7 +252,7 @@ void Renderer::initRenderer() {
     height_ = -1;
 
     // Setup GL state first
-    glClearColor(17.0f/255.0f, 24.0f/255.0f, 39.0f/255.0f, 1.0f);  // Dark background #111827 (17, 24, 39)
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);  // Pure black background
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     
