@@ -1,0 +1,24 @@
+🔒 World's Shortest Privacy Policy
+
+Hey there! 
+
+This app is as private as it gets:
+- We collect absolutely nothing
+- We store absolutely nothing
+- We sell absolutely nothing
+
+The only data that exists is:
+1. Whatever Google Play collects by default (crash reports etc.)
+2. The particles you see on screen (which disappear when you close the app)
+3. That's literally it
+
+No tracking
+No analytics
+No nonsense
+
+Just particles doing particle things.
+
+Want to know more? 
+The entire source code is on GitHub: https://github.com/oasdflkjo/Particles
+
+That's all folks! 👋 

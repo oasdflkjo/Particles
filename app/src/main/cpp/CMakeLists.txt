@@ -39,13 +39,26 @@ set_target_properties(particles PROPERTIES
     CXX_EXTENSIONS NO
 )
 
-# Add compiler definitions and optimization flags
+# Add compiler definitions
 target_compile_definitions(particles PRIVATE
     ANDROID
     GLM_FORCE_SIZE_T_LENGTH
 )
 
-# Add optimization flags for Release builds
+# Debug configuration
+if(CMAKE_BUILD_TYPE MATCHES Debug)
+    target_compile_options(particles PRIVATE
+        -g                      # Include debug symbols
+        -O0                     # No optimization
+        -fno-limit-debug-info   # Don't limit debug info
+    )
+    target_compile_definitions(particles PRIVATE
+        DEBUG                   # Define DEBUG macro
+    )
+    message(STATUS "Building with debug configuration")
+endif()
+
+# Release configuration
 if(CMAKE_BUILD_TYPE MATCHES Release)
     target_compile_options(particles PRIVATE
         -O3                     # Maximum optimization
