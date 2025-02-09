@@ -17,7 +17,6 @@ add_library(particles SHARED
         AndroidOut.cpp
         Renderer.cpp
         Shader.cpp
-        TextureAsset.cpp
         Utility.cpp)
 
 # Searches for a package provided by the game activity dependency

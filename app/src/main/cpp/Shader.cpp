@@ -1,7 +1,6 @@
 #include "Shader.h"
 
 #include "AndroidOut.h"
-#include "Model.h"
 #include "Utility.h"
 #include <GLES3/gl31.h>
 
@@ -41,26 +40,8 @@ Shader *Shader::loadShader(
         return nullptr;
     }
 
-    // Get attribute and uniform locations
-    GLint positionAttribute = -1;
-    GLint uvAttribute = -1;
+    // Get uniform locations
     GLint projectionMatrixUniform = -1;
-
-    if (!positionAttributeName.empty()) {
-        positionAttribute = glGetAttribLocation(program, positionAttributeName.c_str());
-        aout << "Position attribute '" << positionAttributeName << "' location: " << positionAttribute << std::endl;
-        if (positionAttribute == -1) {
-            aout << "Warning: Position attribute not found" << std::endl;
-        }
-    }
-
-    if (!uvAttributeName.empty()) {
-        uvAttribute = glGetAttribLocation(program, uvAttributeName.c_str());
-        aout << "UV attribute '" << uvAttributeName << "' location: " << uvAttribute << std::endl;
-        if (uvAttribute == -1) {
-            aout << "Warning: UV attribute not found" << std::endl;
-        }
-    }
 
     if (!projectionMatrixUniformName.empty()) {
         projectionMatrixUniform = glGetUniformLocation(program, projectionMatrixUniformName.c_str());
@@ -70,7 +51,7 @@ Shader *Shader::loadShader(
         }
     }
 
-    // Print all active attributes and uniforms
+    // Print all active attributes and uniforms for debugging
     GLint numAttributes = 0;
     glGetProgramiv(program, GL_ACTIVE_ATTRIBUTES, &numAttributes);
     aout << "Number of active attributes: " << numAttributes << std::endl;
@@ -101,7 +82,7 @@ Shader *Shader::loadShader(
     glDeleteShader(vertexShader);
     glDeleteShader(fragmentShader);
 
-    return new Shader(program, positionAttribute, uvAttribute, projectionMatrixUniform);
+    return new Shader(program, -1, -1, projectionMatrixUniform);
 }
 
 GLuint Shader::loadShader(GLenum shaderType, const std::string &shaderSource) {
@@ -152,40 +133,6 @@ void Shader::activate() const {
 
 void Shader::deactivate() const {
     glUseProgram(0);
-}
-
-void Shader::drawModel(const Model &model) const {
-    // The position attribute is 3 floats
-    glVertexAttribPointer(
-            position_, // attrib
-            3, // elements
-            GL_FLOAT, // of type float
-            GL_FALSE, // don't normalize
-            sizeof(Vertex), // stride is Vertex bytes
-            model.getVertexData() // pull from the start of the vertex data
-    );
-    glEnableVertexAttribArray(position_);
-
-    // The uv attribute is 2 floats
-    glVertexAttribPointer(
-            uv_, // attrib
-            2, // elements
-            GL_FLOAT, // of type float
-            GL_FALSE, // don't normalize
-            sizeof(Vertex), // stride is Vertex bytes
-            ((uint8_t *) model.getVertexData()) + sizeof(Vector3) // offset Vector3 from the start
-    );
-    glEnableVertexAttribArray(uv_);
-
-    // Setup the texture
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, model.getTexture().getTextureID());
-
-    // Draw as indexed triangles
-    glDrawElements(GL_TRIANGLES, model.getIndexCount(), GL_UNSIGNED_SHORT, model.getIndexData());
-
-    glDisableVertexAttribArray(uv_);
-    glDisableVertexAttribArray(position_);
 }
 
 void Shader::setProjectionMatrix(float* projectionMatrix) const {

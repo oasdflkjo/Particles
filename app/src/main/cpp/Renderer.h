@@ -7,7 +7,6 @@
 #include <vector>
 #include <chrono>
 #include <string>
-#include "Model.h"
 #include "Shader.h"
 
 struct android_app;
