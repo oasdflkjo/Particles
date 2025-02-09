@@ -3,7 +3,6 @@
 
 #include <cassert>
 #include <string>
-#include <stdexcept>
 #include <android/asset_manager.h>
 
 class Utility {
@@ -33,7 +32,14 @@ public:
 
     static float *buildIdentityMatrix(float *outMatrix);
 
-    static std::string loadAsset(AAssetManager* mgr, const std::string& path);
+    /**
+     * Load an asset file into a string
+     * @param mgr Asset manager
+     * @param path Path to the asset
+     * @param outContent String to store the content in
+     * @return true if successful, false if failed
+     */
+    static bool loadAsset(AAssetManager* mgr, const std::string& path, std::string& outContent);
 };
 
 #endif //ANDROIDGLINVESTIGATIONS_UTILITY_H

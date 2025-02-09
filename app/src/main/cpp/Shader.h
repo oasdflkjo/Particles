@@ -25,7 +25,8 @@ public:
         program_(program),
         projectionMatrix_(projectionMatrix) {
         if (program_ == 0) {
-            throw std::runtime_error("Invalid shader program");
+            aout << "Invalid shader program" << std::endl;
+            return;
         }
         aout << "Created shader with program=" << program 
              << " proj=" << projectionMatrix << std::endl;
@@ -44,11 +45,11 @@ public:
         }
     }
 
-    void activate() const;
+    bool activate() const;
     void deactivate() const;
-    void setProjectionMatrix(float* projectionMatrix) const;
+    bool setProjectionMatrix(float* projectionMatrix) const;
     GLuint program() const { return program_; }
-    void checkError(const char* operation) const;
+    bool checkError(const char* operation) const;
 
 private:
     static GLuint compileShader(GLenum type, const std::string &source);

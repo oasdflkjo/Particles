@@ -9,6 +9,12 @@
 #include <sstream>
 #include <iomanip>
 #include <thread>
+#include <time.h>
+#include <sched.h>
+#include <sys/resource.h>
+#include <unistd.h>
+#include <sys/syscall.h>
+#include <sys/types.h>
 
 #include "AndroidOut.h"
 #include "Shader.h"
@@ -64,75 +70,50 @@ Renderer::~Renderer() {
 }
 
 void Renderer::render() {
-    static float targetFPS = 0.0f;
-    static const auto getRefreshRate = [this]() -> float {
-        if (app_ && app_->activity && app_->activity->vm) {
-            JNIEnv* env;
-            app_->activity->vm->AttachCurrentThread(&env, nullptr);
-            
-            // Get the NativeActivity instance
-            jobject activity = app_->activity->javaGameActivity;
-            
-            // Get the WindowManager service
-            jclass activityClass = env->FindClass("android/app/NativeActivity");
-            jmethodID getWindowManager = env->GetMethodID(activityClass, "getWindowManager", "()Landroid/view/WindowManager;");
-            jobject windowManager = env->CallObjectMethod(activity, getWindowManager);
-            
-            // Get the default display
-            jclass windowManagerClass = env->FindClass("android/view/WindowManager");
-            jmethodID getDefaultDisplay = env->GetMethodID(windowManagerClass, "getDefaultDisplay", "()Landroid/view/Display;");
-            jobject display = env->CallObjectMethod(windowManager, getDefaultDisplay);
-            
-            // Get the refresh rate
-            jclass displayClass = env->FindClass("android/view/Display");
-            jmethodID getRefreshRate = env->GetMethodID(displayClass, "getRefreshRate", "()F");
-            float rate = env->CallFloatMethod(display, getRefreshRate);
-            
-            // Clean up local references
-            env->DeleteLocalRef(displayClass);
-            env->DeleteLocalRef(display);
-            env->DeleteLocalRef(windowManagerClass);
-            env->DeleteLocalRef(windowManager);
-            env->DeleteLocalRef(activityClass);
-            
-            app_->activity->vm->DetachCurrentThread();
-            
-            if (rate > 0.0f) {
-                aout << "Display refresh rate: " << rate << " Hz" << std::endl;
-                return rate;
-            }
-        }
-        // Default to 60 Hz if we can't get the refresh rate
-        aout << "Could not get refresh rate, defaulting to 60 Hz" << std::endl;
-        return 60.0f;
-    };
-    
-    // Initialize target FPS on first frame
-    if (targetFPS == 0.0f) {
-        targetFPS = getRefreshRate();
-    }
-    
-    // Frame timing using sleep + minimal spin approach
+    static float targetFPS = getRefreshRate();
     static const auto targetFrameTime = std::chrono::nanoseconds(static_cast<long long>(1000000000.0f / targetFPS));
-    static const auto spinThreshold = std::chrono::microseconds(500); // Spin only for last 0.5ms
     static auto lastFrameTime = std::chrono::steady_clock::now();
+    static auto lastMissedFrameReport = std::chrono::steady_clock::now();
+    static const auto reportThreshold = std::chrono::seconds(1);  // Report at most once per second
+    
+    // Use a shorter spin time for more precise timing
+    static const auto spinThreshold = std::chrono::microseconds(200); // Reduced from 500
     
     auto now = std::chrono::steady_clock::now();
     auto frameTime = now - lastFrameTime;
     auto sleepTime = targetFrameTime - frameTime;
     
+    // Check if we missed the frame timing
+    if (frameTime > targetFrameTime) {
+        auto currentTime = std::chrono::steady_clock::now();
+        if (currentTime - lastMissedFrameReport > reportThreshold) {
+            float actualMs = std::chrono::duration<float, std::milli>(frameTime).count();
+            float targetMs = std::chrono::duration<float, std::milli>(targetFrameTime).count();
+            float overMs = actualMs - targetMs;
+            aout << "Missed frame timing by " << overMs 
+                 << "ms (target: " << targetMs 
+                 << "ms, actual: " << actualMs 
+                 << "ms)" << std::endl;
+            lastMissedFrameReport = currentTime;
+        }
+    }
+    
     if (sleepTime > spinThreshold) {
-        // Sleep for most of the remaining time
-        std::this_thread::sleep_for(sleepTime - spinThreshold);
+        // Use clock_nanosleep for more precise sleeping
+        struct timespec req, rem;
+        auto sleepNs = std::chrono::duration_cast<std::chrono::nanoseconds>(sleepTime - spinThreshold);
+        req.tv_sec = sleepNs.count() / 1000000000;
+        req.tv_nsec = sleepNs.count() % 1000000000;
+        clock_nanosleep(CLOCK_MONOTONIC, 0, &req, &rem);
         
-        // Update timing after sleep
         now = std::chrono::steady_clock::now();
         frameTime = now - lastFrameTime;
         sleepTime = targetFrameTime - frameTime;
     }
     
-    // Minimal spin-wait for the remainder
+    // Spin-wait with yield for the remainder
     while (frameTime < targetFrameTime) {
+        sched_yield();  // Allow other high-priority threads to run if needed
         now = std::chrono::steady_clock::now();
         frameTime = now - lastFrameTime;
     }
@@ -243,7 +224,7 @@ void Renderer::initRenderer() {
     }
 
     // Disable VSync
-    if (!eglSwapInterval(display_, 0)) {
+    if (!eglSwapInterval(display_, 1)) {
         aout << "Failed to set swap interval 0, error: " << eglGetError() << std::endl;
     }
 
@@ -269,46 +250,51 @@ void Renderer::initRenderer() {
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     
-    // Initialize shaders with error checking
-    try {
-        auto assetManager = app_->activity->assetManager;
-        if (!assetManager) {
-            throw std::runtime_error("Failed to get asset manager");
-        }
-        
-        try {
-            // Load particle shaders
-            aout << "Loading particle vertex shader..." << std::endl;
-            std::string vertSrc = Utility::loadAsset(assetManager, "shaders/particle.vert");
-            std::string fragSrc = Utility::loadAsset(assetManager, "shaders/particle.frag");
-            
-            particleShader_ = std::unique_ptr<Shader>(
-                Shader::loadShader(vertSrc, fragSrc, "position", "", "uProjection"));
-            if (!particleShader_) {
-                throw std::runtime_error("Failed to create particle shader");
-            }
-            
-            // Load compute shader
-            aout << "Loading compute shader..." << std::endl;
-            std::string computeSrc = Utility::loadAsset(assetManager, "shaders/particle.comp");
-            computeShader_ = std::unique_ptr<Shader>(
-                Shader::loadComputeShader(computeSrc));
-            if (!computeShader_) {
-                throw std::runtime_error("Failed to create compute shader");
-            }
-            
-        } catch (const std::exception& e) {
-            throw std::runtime_error(std::string("Error loading shader files: ") + e.what());
-        }
-
-        // Initialize particle system
-        initParticleSystem();
-        aout << "Particle system initialized" << std::endl;
-
-    } catch (const std::exception& e) {
-        aout << "Error during initialization: " << e.what() << std::endl;
+    // Initialize shaders
+    auto assetManager = app_->activity->assetManager;
+    if (!assetManager) {
+        aout << "Failed to get asset manager" << std::endl;
         return;
     }
+    
+    // Load particle shaders
+    aout << "Loading particle vertex shader..." << std::endl;
+    std::string vertSrc, fragSrc, computeSrc;
+    
+    if (!Utility::loadAsset(assetManager, "shaders/particle.vert", vertSrc)) {
+        aout << "Failed to load vertex shader" << std::endl;
+        return;
+    }
+    
+    if (!Utility::loadAsset(assetManager, "shaders/particle.frag", fragSrc)) {
+        aout << "Failed to load fragment shader" << std::endl;
+        return;
+    }
+    
+    particleShader_ = std::unique_ptr<Shader>(
+        Shader::loadShader(vertSrc, fragSrc, "position", "", "uProjection"));
+    if (!particleShader_) {
+        aout << "Failed to create particle shader" << std::endl;
+        return;
+    }
+    
+    // Load compute shader
+    aout << "Loading compute shader..." << std::endl;
+    if (!Utility::loadAsset(assetManager, "shaders/particle.comp", computeSrc)) {
+        aout << "Failed to load compute shader" << std::endl;
+        return;
+    }
+    
+    computeShader_ = std::unique_ptr<Shader>(
+        Shader::loadComputeShader(computeSrc));
+    if (!computeShader_) {
+        aout << "Failed to create compute shader" << std::endl;
+        return;
+    }
+
+    // Initialize particle system
+    initParticleSystem();
+    aout << "Particle system initialized" << std::endl;
 
     // Set initial gravity point to center (0,0)
     gravityPoint_[0] = 0.0f;
@@ -349,9 +335,8 @@ void Renderer::updateRenderArea() {
         // Update projection for particle shader
         if (particleShader_) {
             particleShader_->activate();
-            GLint projLoc = glGetUniformLocation(particleShader_->program(), "uProjection");
-            if (projLoc != -1) {
-                glUniformMatrix4fv(projLoc, 1, GL_FALSE, projectionMatrix);
+            if (!particleShader_->setProjectionMatrix(projectionMatrix)) {
+                aout << "Failed to set projection matrix" << std::endl;
             }
             particleShader_->deactivate();
         }
@@ -417,38 +402,9 @@ void Renderer::handleInput() {
 }
 
 void Renderer::initParticleSystem() {
-    // Get the refresh rate first
-    float refreshRate = 0.0f;
-    if (app_ && app_->activity && app_->activity->vm) {
-        JNIEnv* env;
-        app_->activity->vm->AttachCurrentThread(&env, nullptr);
-        
-        jobject activity = app_->activity->javaGameActivity;
-        jclass activityClass = env->FindClass("android/app/NativeActivity");
-        jmethodID getWindowManager = env->GetMethodID(activityClass, "getWindowManager", "()Landroid/view/WindowManager;");
-        jobject windowManager = env->CallObjectMethod(activity, getWindowManager);
-        
-        jclass windowManagerClass = env->FindClass("android/view/WindowManager");
-        jmethodID getDefaultDisplay = env->GetMethodID(windowManagerClass, "getDefaultDisplay", "()Landroid/view/Display;");
-        jobject display = env->CallObjectMethod(windowManager, getDefaultDisplay);
-        
-        jclass displayClass = env->FindClass("android/view/Display");
-        jmethodID getRefreshRate = env->GetMethodID(displayClass, "getRefreshRate", "()F");
-        refreshRate = env->CallFloatMethod(display, getRefreshRate);
-        
-        env->DeleteLocalRef(displayClass);
-        env->DeleteLocalRef(display);
-        env->DeleteLocalRef(windowManagerClass);
-        env->DeleteLocalRef(windowManager);
-        env->DeleteLocalRef(activityClass);
-        
-        app_->activity->vm->DetachCurrentThread();
-    }
+    // Get the refresh rate
+    float refreshRate = getRefreshRate();
     
-    if (refreshRate <= 0.0f) {
-        refreshRate = 60.0f;  // Default to 60Hz if we couldn't get the rate
-    }
-
     // Simple binary scaling - either 90fps capable (1.8x particles) or not
     float scaleFactor = refreshRate >= 90.0f ? 2.0f : 1.0f;
     
@@ -580,7 +536,10 @@ void Renderer::initParticleSystem() {
 void Renderer::updateParticles() {
     if (!computeShader_) return;
     
-    computeShader_->activate();
+    if (!computeShader_->activate()) {
+        aout << "Failed to activate compute shader" << std::endl;
+        return;
+    }
     
     // Calculate delta time and apply time scale
     auto currentTime = std::chrono::steady_clock::now();
@@ -626,7 +585,10 @@ void Renderer::updateParticles() {
 void Renderer::renderParticles() {
     if (!particleShader_) return;
     
-    particleShader_->activate();
+    if (!particleShader_->activate()) {
+        aout << "Failed to activate particle shader" << std::endl;
+        return;
+    }
     
     // Use alpha blending - only set once per frame
     static bool blendingSet = false;
@@ -643,4 +605,35 @@ void Renderer::renderParticles() {
     glDrawArrays(GL_POINTS, 0, numParticles_);
     
     particleShader_->deactivate();
+}
+
+float Renderer::getRefreshRate() {
+    float refreshRate = 0.0f;
+    if (app_ && app_->activity && app_->activity->vm) {
+        JNIEnv* env;
+        app_->activity->vm->AttachCurrentThread(&env, nullptr);
+        
+        jobject activity = app_->activity->javaGameActivity;
+        jclass activityClass = env->FindClass("android/app/NativeActivity");
+        jmethodID getWindowManager = env->GetMethodID(activityClass, "getWindowManager", "()Landroid/view/WindowManager;");
+        jobject windowManager = env->CallObjectMethod(activity, getWindowManager);
+        
+        jclass windowManagerClass = env->FindClass("android/view/WindowManager");
+        jmethodID getDefaultDisplay = env->GetMethodID(windowManagerClass, "getDefaultDisplay", "()Landroid/view/Display;");
+        jobject display = env->CallObjectMethod(windowManager, getDefaultDisplay);
+        
+        jclass displayClass = env->FindClass("android/view/Display");
+        jmethodID getRefreshRate = env->GetMethodID(displayClass, "getRefreshRate", "()F");
+        refreshRate = env->CallFloatMethod(display, getRefreshRate);
+        
+        env->DeleteLocalRef(displayClass);
+        env->DeleteLocalRef(display);
+        env->DeleteLocalRef(windowManagerClass);
+        env->DeleteLocalRef(windowManager);
+        env->DeleteLocalRef(activityClass);
+        
+        app_->activity->vm->DetachCurrentThread();
+    }
+    
+    return refreshRate > 0.0f ? refreshRate : 60.0f;  // Default to 60Hz if we couldn't get the rate
 }

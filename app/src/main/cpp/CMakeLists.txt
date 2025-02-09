@@ -48,23 +48,36 @@ target_compile_definitions(particles PRIVATE
 if(CMAKE_BUILD_TYPE MATCHES Debug)
     target_compile_options(particles PRIVATE
         -g                      # Include debug symbols
-        -O0                     # No optimization
-        -fno-limit-debug-info   # Don't limit debug info
+        -O2                     # Moderate optimization level
+        -fno-omit-frame-pointer # Keep frame pointer for better debugging
+        -ftree-vectorize        # Enable vectorization
+        -ffast-math             # Enable fast math operations
+        -Wall                   # Enable all warnings
+        -Werror                 # Treat warnings as errors
+        -fno-rtti              # Disable RTTI
+        -fno-exceptions        # Disable exceptions
+        -fno-limit-debug-info  # Don't limit debug info
     )
-    target_compile_definitions(particles PRIVATE
-        DEBUG                   # Define DEBUG macro
-    )
-    message(STATUS "Building with debug configuration")
-endif()
-
-# Release configuration
-if(CMAKE_BUILD_TYPE MATCHES Release)
+else()
     target_compile_options(particles PRIVATE
         -O3                     # Maximum optimization
         -flto                   # Link-time optimization
-        -ffast-math             # Fast math operations
-        -fstrict-aliasing      # Enable strict aliasing
-        -fomit-frame-pointer   # Omit frame pointer
+        -ffast-math             # Enable fast math operations
+        -Wall                   # Enable all warnings
+        -Werror                # Treat warnings as errors
+        -fno-rtti              # Disable RTTI
+        -fno-exceptions        # Disable exceptions
+        -fomit-frame-pointer   # Omit frame pointer for max performance
+        -ffunction-sections    # Place each function in its own section
+        -fdata-sections        # Place each data item in its own section
+    )
+endif()
+
+# Add linker flags for release builds
+if(NOT CMAKE_BUILD_TYPE MATCHES Debug)
+    target_link_options(particles PRIVATE
+        -Wl,--gc-sections      # Remove unused sections
+        -flto                  # Link-time optimization
     )
 endif()
 

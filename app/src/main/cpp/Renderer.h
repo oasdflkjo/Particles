@@ -42,6 +42,7 @@ private:
     void updateParticles();
     void renderParticles();
     void swapParticleBuffers();
+    float getRefreshRate();
 
     android_app *app_;
     EGLDisplay display_;

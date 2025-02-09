@@ -10,6 +10,8 @@ import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.util.Log
 import com.google.androidgamesdk.GameActivity
+import android.view.WindowManager
+import android.os.Build
 
 class MainActivity : GameActivity() {
     companion object {
@@ -51,6 +53,17 @@ class MainActivity : GameActivity() {
             }
             // Note: We don't call launchNativeActivity() here because GameActivity is already our native activity
             Log.d(TAG, "onCreate completed")
+
+            // Add in onCreate after super.onCreate
+            window.setFlags(
+                WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
+                WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+            )
+
+            // Request sustained performance mode if available
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                window.setSustainedPerformanceMode(true)
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Error in onCreate: ${e.message}", e)
         }

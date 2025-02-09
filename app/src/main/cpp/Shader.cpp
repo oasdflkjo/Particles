@@ -116,9 +116,10 @@ GLuint Shader::loadShader(GLenum shaderType, const std::string &shaderSource) {
     return shader;
 }
 
-void Shader::activate() const {
+bool Shader::activate() const {
     if (!program_ || program_ == 0) {
-        throw std::runtime_error("Trying to activate invalid shader program");
+        aout << "Trying to activate invalid shader program" << std::endl;
+        return false;
     }
     
     GLenum error = glGetError(); // Clear any previous errors
@@ -126,22 +127,24 @@ void Shader::activate() const {
     error = glGetError();
     if (error != GL_NO_ERROR) {
         aout << "Error activating shader program " << program_ << ": 0x" << std::hex << error << std::endl;
-        throw std::runtime_error("Failed to activate shader program");
+        return false;
     }
+    return true;
 }
 
 void Shader::deactivate() const {
     glUseProgram(0);
 }
 
-void Shader::setProjectionMatrix(float* projectionMatrix) const {
+bool Shader::setProjectionMatrix(float* projectionMatrix) const {
     if (!program_) {
-        throw std::runtime_error("Invalid shader program");
+        aout << "Invalid shader program" << std::endl;
+        return false;
     }
     
     if (projectionMatrix_ == -1) {
         aout << "Warning: Projection matrix uniform location is -1" << std::endl;
-        return;
+        return false;
     }
     
     GLenum error = glGetError(); // Clear any previous errors
@@ -149,8 +152,9 @@ void Shader::setProjectionMatrix(float* projectionMatrix) const {
     error = glGetError();
     if (error != GL_NO_ERROR) {
         aout << "Error setting projection matrix: 0x" << std::hex << error << std::endl;
-        throw std::runtime_error("Failed to set projection matrix");
+        return false;
     }
+    return true;
 }
 
 Shader* Shader::loadComputeShader(const std::string& computeSource) {
@@ -206,12 +210,13 @@ Shader* Shader::loadComputeShader(const std::string& computeSource) {
     return new Shader(program);
 }
 
-void Shader::checkError(const char* operation) const {
+bool Shader::checkError(const char* operation) const {
     GLenum error = glGetError();
     if (error != GL_NO_ERROR) {
         aout << "OpenGL error after " << operation << ": 0x" << std::hex << error << std::endl;
-        throw std::runtime_error("OpenGL error");
+        return false;
     }
+    return true;
 }
 
 GLuint Shader::compileShader(GLenum type, const std::string &source) {

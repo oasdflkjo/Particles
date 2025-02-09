@@ -86,19 +86,22 @@ float *Utility::buildIdentityMatrix(float *outMatrix) {
     return outMatrix;
 }
 
-std::string Utility::loadAsset(AAssetManager* mgr, const std::string& path) {
+bool Utility::loadAsset(AAssetManager* mgr, const std::string& path, std::string& outContent) {
     AAsset* asset = AAssetManager_open(mgr, path.c_str(), AASSET_MODE_BUFFER);
     if (!asset) {
         aout << "Failed to open asset: " << path << std::endl;
-        throw std::runtime_error("Failed to open asset: " + path);
+        return false;
     }
     
     size_t length = AAsset_getLength(asset);
-    std::string content;
-    content.resize(length);
+    outContent.resize(length);
     
-    AAsset_read(asset, &content[0], length);
+    if (AAsset_read(asset, &outContent[0], length) != length) {
+        aout << "Failed to read asset: " << path << std::endl;
+        AAsset_close(asset);
+        return false;
+    }
+    
     AAsset_close(asset);
-    
-    return content;
+    return true;
 }
