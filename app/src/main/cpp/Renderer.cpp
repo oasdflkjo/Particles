@@ -44,8 +44,9 @@ static constexpr int BASE_PARTICLE_COUNT = 100000;
 
 Renderer::~Renderer() {
     if (buffersInitialized_) {
-        glDeleteBuffers(1, &positionBuffer_);
-        glDeleteBuffers(1, &velocityBuffer_);
+        glDeleteBuffers(NUM_BUFFERS, positionBuffers_);
+        glDeleteBuffers(NUM_BUFFERS, velocityBuffers_);
+        glDeleteVertexArrays(NUM_BUFFERS, particleVAOs_);
     }
     if (display_ != EGL_NO_DISPLAY) {
         eglMakeCurrent(display_, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
@@ -145,7 +146,29 @@ void Renderer::render() {
     glClear(GL_COLOR_BUFFER_BIT);
     
     if (computeShader_ && particleShader_) {
+        // Wait for previous compute to finish if there's a fence
+        if (computeFence_) {
+            // Wait with a timeout of 16ms (roughly one frame at 60Hz)
+            GLenum waitResult = glClientWaitSync(computeFence_, GL_SYNC_FLUSH_COMMANDS_BIT, 16000000);
+            if (waitResult == GL_TIMEOUT_EXPIRED) {
+                aout << "Warning: Compute shader took longer than 16ms" << std::endl;
+            }
+            glDeleteSync(computeFence_);
+            computeFence_ = nullptr;
+            
+            // Previous compute is now complete, update indices
+            displayBufferIndex_ = computeBufferIndex_;
+            computeBufferIndex_ = currentBufferIndex_;
+            currentBufferIndex_ = displayBufferIndex_;
+        }
+        
+        // Start compute for next frame
         updateParticles();
+        
+        // Create fence for this compute operation
+        computeFence_ = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+        
+        // Render current frame
         renderParticles();
     }
 
@@ -509,56 +532,60 @@ void Renderer::initParticleSystem() {
     
     // Pre-allocate buffers at maximum size if not already done
     if (!buffersInitialized_) {
-        // Generate buffers
-        glGenBuffers(1, &positionBuffer_);
-        glGenBuffers(1, &velocityBuffer_);
+        // Generate buffers for triple buffering
+        glGenBuffers(NUM_BUFFERS, positionBuffers_);
+        glGenBuffers(NUM_BUFFERS, velocityBuffers_);
+        glGenVertexArrays(NUM_BUFFERS, particleVAOs_);
         
-        // Pre-allocate position buffer
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, positionBuffer_);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, numParticles_ * 2 * sizeof(float), positions.data(), GL_DYNAMIC_DRAW);
-        // Bind it persistently to binding point 0
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, positionBuffer_);
+        for (int i = 0; i < NUM_BUFFERS; i++) {
+            // Initialize position buffer
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, positionBuffers_[i]);
+            glBufferData(GL_SHADER_STORAGE_BUFFER, numParticles_ * 2 * sizeof(float), positions.data(), GL_DYNAMIC_DRAW);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, positionBuffers_[i]);
+            
+            // Initialize velocity buffer
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, velocityBuffers_[i]);
+            glBufferData(GL_SHADER_STORAGE_BUFFER, numParticles_ * 2 * sizeof(float), velocities.data(), GL_DYNAMIC_DRAW);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, velocityBuffers_[i]);
+            
+            // Set up VAO with persistent attribute bindings
+            glBindVertexArray(particleVAOs_[i]);
+            
+            // Position attribute (vec2)
+            glBindBuffer(GL_ARRAY_BUFFER, positionBuffers_[i]);
+            glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, nullptr);
+            glEnableVertexAttribArray(0);
+            
+            // Velocity attribute (vec2)
+            glBindBuffer(GL_ARRAY_BUFFER, velocityBuffers_[i]);
+            glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, nullptr);
+            glEnableVertexAttribArray(1);
+        }
         
-        // Pre-allocate velocity buffer
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, velocityBuffer_);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, numParticles_ * 2 * sizeof(float), velocities.data(), GL_DYNAMIC_DRAW);
-        // Bind it persistently to binding point 1
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, velocityBuffer_);
-        
-        // Set up VAO with persistent attribute bindings
-        glGenVertexArrays(1, &particleVAO_);
-        glBindVertexArray(particleVAO_);
-        
-        // Position attribute (vec2)
-        glBindBuffer(GL_ARRAY_BUFFER, positionBuffer_);
-        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, nullptr);
-        glEnableVertexAttribArray(0);
-        
-        // Velocity attribute (vec2)
-        glBindBuffer(GL_ARRAY_BUFFER, velocityBuffer_);
-        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, nullptr);
-        glEnableVertexAttribArray(1);
-        
-        // Enable persistent VAO binding
+        // Reset bindings
         glBindVertexArray(0);
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
         
         buffersInitialized_ = true;
     }
     
-    // Upload initial particle data without changing bindings
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, positionBuffer_);
-    glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, numParticles_ * 2 * sizeof(float), positions.data());
-    
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, velocityBuffer_);
-    glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, numParticles_ * 2 * sizeof(float), velocities.data());
+    // Initialize all buffers with the same initial data
+    for (int i = 0; i < NUM_BUFFERS; i++) {
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, positionBuffers_[i]);
+        glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, numParticles_ * 2 * sizeof(float), positions.data());
+        
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, velocityBuffers_[i]);
+        glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, numParticles_ * 2 * sizeof(float), velocities.data());
+    }
     
     // Verify setup
     GLenum error = glGetError();
     if (error != GL_NO_ERROR) {
         aout << "Error after buffer setup: 0x" << std::hex << error << std::endl;
     } else {
-        aout << "Buffer setup successful with persistent bindings" << std::endl;
-        aout << "Initialized " << numParticles_ << " particles" << std::endl;
+        aout << "Buffer setup successful with triple buffering" << std::endl;
+        aout << "Initialized " << numParticles_ << " particles in " << NUM_BUFFERS << " buffers" << std::endl;
     }
 }
 
@@ -572,7 +599,20 @@ void Renderer::updateParticles() {
     float deltaTime = std::chrono::duration<float>(currentTime - lastFrameTime_).count() * timeScale_;
     lastFrameTime_ = currentTime;
     
-    // No need to bind buffers here - they're persistently bound
+    // Bind compute buffers - read from current buffer, write to compute buffer
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, positionBuffers_[computeBufferIndex_]);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, velocityBuffers_[computeBufferIndex_]);
+    
+    // Copy current state to compute buffer before modification
+    // First copy positions
+    glBindBuffer(GL_COPY_READ_BUFFER, positionBuffers_[currentBufferIndex_]);
+    glBindBuffer(GL_COPY_WRITE_BUFFER, positionBuffers_[computeBufferIndex_]);
+    glCopyBufferSubData(GL_COPY_READ_BUFFER, GL_COPY_WRITE_BUFFER, 0, 0, numParticles_ * 2 * sizeof(float));
+    
+    // Then copy velocities
+    glBindBuffer(GL_COPY_READ_BUFFER, velocityBuffers_[currentBufferIndex_]);
+    glBindBuffer(GL_COPY_WRITE_BUFFER, velocityBuffers_[computeBufferIndex_]);
+    glCopyBufferSubData(GL_COPY_READ_BUFFER, GL_COPY_WRITE_BUFFER, 0, 0, numParticles_ * 2 * sizeof(float));
     
     // Set uniforms
     GLint gravityLoc = glGetUniformLocation(computeShader_->program(), "gravityPoint");
@@ -608,8 +648,8 @@ void Renderer::renderParticles() {
         blendingSet = true;
     }
     
-    // VAO is already bound with persistent attributes
-    glBindVertexArray(particleVAO_);
+    // Bind the current VAO for rendering
+    glBindVertexArray(particleVAOs_[currentBufferIndex_]);
     
     // Draw particles
     glDrawArrays(GL_POINTS, 0, numParticles_);

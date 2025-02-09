@@ -22,9 +22,9 @@ public:
             height_(0),
             gravityPoint_{0.0f, 0.0f},
             timeScale_(0.80f),
-            positionBuffer_(0),
-            velocityBuffer_(0),
-            particleVAO_(0),
+            currentBufferIndex_(0),
+            computeBufferIndex_(1),
+            displayBufferIndex_(2),
             numParticles_(0) {
         lastFrameTime_ = std::chrono::steady_clock::now();
         initRenderer();
@@ -41,6 +41,7 @@ private:
     void initParticleSystem();
     void updateParticles();
     void renderParticles();
+    void swapParticleBuffers();
 
     android_app *app_;
     EGLDisplay display_;
@@ -53,11 +54,20 @@ private:
     float gravityPoint_[2];
     float timeScale_;  // Time scale factor (0.75 = 75% speed)
 
-    // Particle system
-    GLuint positionBuffer_;
-    GLuint velocityBuffer_;
-    GLuint particleVAO_;
+    // Triple buffering for particle system
+    static constexpr int NUM_BUFFERS = 3;
+    GLuint positionBuffers_[NUM_BUFFERS];
+    GLuint velocityBuffers_[NUM_BUFFERS];
+    GLuint particleVAOs_[NUM_BUFFERS];
+    
+    // Buffer indices for triple buffering
+    int currentBufferIndex_;    // Buffer currently being rendered
+    int computeBufferIndex_;    // Buffer being computed
+    int displayBufferIndex_;    // Buffer ready for display
     int numParticles_;
+
+    // Synchronization fence for compute shader
+    GLsync computeFence_ = nullptr;
 
     // Shaders
     std::unique_ptr<Shader> computeShader_;
