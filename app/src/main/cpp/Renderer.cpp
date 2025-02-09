@@ -111,15 +111,26 @@ void Renderer::render() {
         targetFPS = getRefreshRate();
     }
     
-    // Frame timing based on display refresh rate
+    // Frame timing using sleep + minimal spin approach
     static const auto targetFrameTime = std::chrono::nanoseconds(static_cast<long long>(1000000000.0f / targetFPS));
+    static const auto spinThreshold = std::chrono::microseconds(500); // Spin only for last 0.5ms
     static auto lastFrameTime = std::chrono::steady_clock::now();
     
-    // Calculate time since last frame
     auto now = std::chrono::steady_clock::now();
     auto frameTime = now - lastFrameTime;
+    auto sleepTime = targetFrameTime - frameTime;
     
-    // If we're ahead of schedule, spin until we hit our target
+    if (sleepTime > spinThreshold) {
+        // Sleep for most of the remaining time
+        std::this_thread::sleep_for(sleepTime - spinThreshold);
+        
+        // Update timing after sleep
+        now = std::chrono::steady_clock::now();
+        frameTime = now - lastFrameTime;
+        sleepTime = targetFrameTime - frameTime;
+    }
+    
+    // Minimal spin-wait for the remainder
     while (frameTime < targetFrameTime) {
         now = std::chrono::steady_clock::now();
         frameTime = now - lastFrameTime;
