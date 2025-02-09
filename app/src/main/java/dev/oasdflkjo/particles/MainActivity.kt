@@ -8,35 +8,52 @@ import android.widget.TextView
 import android.view.View
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
+import android.util.Log
 import com.google.androidgamesdk.GameActivity
 
 class MainActivity : GameActivity() {
     companion object {
+        private const val TAG = "Particles"
         private const val DEBUG_FORCE_SHOW_PRIVACY = false  // Disabled for release
         init {
-            System.loadLibrary("particles")
+            try {
+                System.loadLibrary("particles")
+                Log.d(TAG, "Native library loaded successfully")
+            } catch (e: UnsatisfiedLinkError) {
+                Log.e(TAG, "Failed to load native library: ${e.message}")
+            }
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        
-        // For debugging: Clear preferences if debug flag is set
-        if (DEBUG_FORCE_SHOW_PRIVACY) {
-            getSharedPreferences("app_prefs", MODE_PRIVATE)
-                .edit()
-                .clear()
-                .apply()
+        try {
+            super.onCreate(savedInstanceState)
+            Log.d(TAG, "onCreate started")
+            
+            // For debugging: Clear preferences if debug flag is set
+            if (DEBUG_FORCE_SHOW_PRIVACY) {
+                getSharedPreferences("app_prefs", MODE_PRIVATE)
+                    .edit()
+                    .clear()
+                    .apply()
+                Log.d(TAG, "Debug mode: cleared preferences")
+            }
+            
+            // Check if we need to show the privacy policy
+            val prefs = getSharedPreferences("app_prefs", MODE_PRIVATE)
+            val privacyShown = prefs.getBoolean("privacy_shown", false)
+            
+            if (!privacyShown) {
+                Log.d(TAG, "Showing privacy dialog")
+                showPrivacyDialog()
+            } else {
+                Log.d(TAG, "Privacy already shown")
+            }
+            // Note: We don't call launchNativeActivity() here because GameActivity is already our native activity
+            Log.d(TAG, "onCreate completed")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in onCreate: ${e.message}", e)
         }
-        
-        // Check if we need to show the privacy policy
-        val prefs = getSharedPreferences("app_prefs", MODE_PRIVATE)
-        val privacyShown = prefs.getBoolean("privacy_shown", false)
-        
-        if (!privacyShown) {
-            showPrivacyDialog()
-        }
-        // Note: We don't call launchNativeActivity() here because GameActivity is already our native activity
     }
     
     private fun showPrivacyDialog() {

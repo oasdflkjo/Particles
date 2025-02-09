@@ -44,6 +44,10 @@ aout << std::endl;\
 static constexpr int BASE_PARTICLE_COUNT = 100000;
 
 Renderer::~Renderer() {
+    if (buffersInitialized_) {
+        glDeleteBuffers(1, &positionBuffer_);
+        glDeleteBuffers(1, &velocityBuffer_);
+    }
     if (display_ != EGL_NO_DISPLAY) {
         eglMakeCurrent(display_, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
         if (context_ != EGL_NO_CONTEXT) {
@@ -443,10 +447,6 @@ void Renderer::initParticleSystem() {
     aout << "Creating particle buffers for " << numParticles_ << " particles" << std::endl;
     aout << "Grid size: " << particlesPerRow << " x " << particlesPerCol << std::endl;
     
-    // Create separate buffers for positions and velocities
-    glGenBuffers(1, &positionBuffer_);
-    glGenBuffers(1, &velocityBuffer_);
-    
     // Initialize particles in a grid pattern with a reasonable initial spread
     float initialSpread = 16.0f;  // Match our view area (20 units tall, but leave some margin)
     
@@ -462,6 +462,10 @@ void Renderer::initParticleSystem() {
     alignas(16) std::vector<float> positions(numParticles_ * 2);
     alignas(16) std::vector<float> velocities(numParticles_ * 2);
     
+    // Initialize random number generator with a seed
+    srand(static_cast<unsigned>(time(nullptr)));
+    
+    // Initialize particles in a grid pattern
     for(int i = 0; i < numParticles_; i++) {
         int row = i / particlesPerRow;
         int col = i % particlesPerRow;
@@ -470,30 +474,52 @@ void Renderer::initParticleSystem() {
         float xPos = startX + (col * spacingX);
         float yPos = startY + (row * spacingY);
         
+        // Add small random offset to prevent perfect grid alignment
+        float randX = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
+        float randY = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
+        xPos += (randX - 0.5f) * (spacingX * 0.5f);
+        yPos += (randY - 0.5f) * (spacingY * 0.5f);
+        
         // Initial velocities scaled to view area
         float randAngle = static_cast<float>(rand()) / static_cast<float>(RAND_MAX) * 2.0f * M_PI;
-        float randSpeed = static_cast<float>(rand()) / static_cast<float>(RAND_MAX) * 2.0f;  // Adjusted for view area
+        float randSpeed = static_cast<float>(rand()) / static_cast<float>(RAND_MAX) * 4.0f;  // Increased initial speed
         
         // Store in SoA format
         positions[i * 2] = xPos;
         positions[i * 2 + 1] = yPos;
         velocities[i * 2] = cos(randAngle) * randSpeed;
         velocities[i * 2 + 1] = sin(randAngle) * randSpeed;
+        
+        // Debug output for first few particles
+        if (i < 5) {
+            aout << "Particle " << i << " pos: (" << xPos << ", " << yPos << ") vel: (" 
+                 << cos(randAngle) * randSpeed << ", " << sin(randAngle) * randSpeed << ")" << std::endl;
+        }
     }
     
-    // Upload position data
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, positionBuffer_);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, 
-                 positions.size() * sizeof(float),
-                 positions.data(), 
-                 GL_DYNAMIC_DRAW);
+    // Pre-allocate buffers at maximum size if not already done
+    if (!buffersInitialized_) {
+        // Generate buffers
+        glGenBuffers(1, &positionBuffer_);
+        glGenBuffers(1, &velocityBuffer_);
+        
+        // Pre-allocate position buffer
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, positionBuffer_);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, numParticles_ * 2 * sizeof(float), positions.data(), GL_DYNAMIC_DRAW);
+        
+        // Pre-allocate velocity buffer
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, velocityBuffer_);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, numParticles_ * 2 * sizeof(float), velocities.data(), GL_DYNAMIC_DRAW);
+        
+        buffersInitialized_ = true;
+    }
     
-    // Upload velocity data
+    // Upload initial particle data
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, positionBuffer_);
+    glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, numParticles_ * 2 * sizeof(float), positions.data());
+    
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, velocityBuffer_);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, 
-                 velocities.size() * sizeof(float),
-                 velocities.data(), 
-                 GL_DYNAMIC_DRAW);
+    glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, numParticles_ * 2 * sizeof(float), velocities.data());
     
     // Set up VAO
     glGenVertexArrays(1, &particleVAO_);
@@ -501,18 +527,26 @@ void Renderer::initParticleSystem() {
     
     // Position attribute (vec2)
     glBindBuffer(GL_ARRAY_BUFFER, positionBuffer_);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), nullptr);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, nullptr);
     glEnableVertexAttribArray(0);
     
     // Velocity attribute (vec2)
     glBindBuffer(GL_ARRAY_BUFFER, velocityBuffer_);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), nullptr);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, nullptr);
     glEnableVertexAttribArray(1);
     
     // Verify setup
     GLenum error = glGetError();
     if (error != GL_NO_ERROR) {
         aout << "Error after buffer setup: 0x" << std::hex << error << std::endl;
+    } else {
+        aout << "Buffer setup successful" << std::endl;
+        aout << "Initialized " << numParticles_ << " particles" << std::endl;
+        aout << "First few particle positions:" << std::endl;
+        for (int i = 0; i < 5 && i < numParticles_; i++) {
+            aout << "Particle " << i << " pos: (" << positions[i * 2] << ", " 
+                 << positions[i * 2 + 1] << ")" << std::endl;
+        }
     }
 }
 
@@ -556,7 +590,7 @@ void Renderer::renderParticles() {
     
     particleShader_->activate();
     
-    // Use alpha blending instead of additive
+    // Use alpha blending
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     

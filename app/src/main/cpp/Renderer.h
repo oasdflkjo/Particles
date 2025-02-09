@@ -66,6 +66,14 @@ private:
 
     // Timing
     std::chrono::steady_clock::time_point lastFrameTime_;
+
+    // Add buffer size tracking
+    static constexpr int MAX_PARTICLES = 100000;  // Adjust based on your needs
+    static constexpr int POSITION_BUFFER_SIZE = MAX_PARTICLES * 2 * sizeof(float);  // vec2 positions
+    static constexpr int VELOCITY_BUFFER_SIZE = MAX_PARTICLES * 2 * sizeof(float);  // vec2 velocities
+    
+    // Add buffer state tracking
+    bool buffersInitialized_ = false;
 };
 
 #endif //ANDROIDGLINVESTIGATIONS_RENDERER_H
