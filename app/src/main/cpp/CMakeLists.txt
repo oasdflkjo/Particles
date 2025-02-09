@@ -68,3 +68,13 @@ if(CMAKE_BUILD_TYPE MATCHES Release)
         -fomit-frame-pointer   # Omit frame pointer
     )
 endif()
+
+target_compile_options(particles PRIVATE
+    -target ${ANDROID_LLVM_TRIPLE}
+    -Wall
+    -Werror
+    -fno-rtti  # Keep RTTI disabled as we don't use it
+)
+
+# Set the minimum Android API level
+set(CMAKE_ANDROID_API_MIN 30)

@@ -4,26 +4,37 @@ plugins {
 }
 
 android {
-    namespace = "com.example.particles"
-    compileSdk = 35
+    namespace = "dev.oasdflkjo.particles"
+    compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.example.particles"
+        applicationId = "dev.oasdflkjo.particles"
         minSdk = 30
-        targetSdk = 35
+        targetSdk = 34
         versionCode = 1
-        versionName = "1.0"
+        versionName = "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        externalNativeBuild {
+            cmake {
+                arguments("-DANDROID_STL=c++_shared", "-DCMAKE_BUILD_TYPE=Release")
+            }
+        }
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+        }
+        debug {
+            isDebuggable = true
+            applicationIdSuffix = ".debug"
         }
     }
     compileOptions {
@@ -42,6 +53,7 @@ android {
             version = "3.22.1"
         }
     }
+    ndkVersion = "25.1.8937393"
 }
 
 dependencies {

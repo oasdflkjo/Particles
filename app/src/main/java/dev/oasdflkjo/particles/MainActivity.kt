@@ -1,4 +1,4 @@
-package com.example.particles
+package dev.oasdflkjo.particles
 
 import android.app.AlertDialog
 import android.app.NativeActivity
@@ -12,7 +12,7 @@ import com.google.androidgamesdk.GameActivity
 
 class MainActivity : GameActivity() {
     companion object {
-        private const val DEBUG_FORCE_SHOW_PRIVACY = true  // Set to false for release
+        private const val DEBUG_FORCE_SHOW_PRIVACY = false  // Disabled for release
         init {
             System.loadLibrary("particles")
         }

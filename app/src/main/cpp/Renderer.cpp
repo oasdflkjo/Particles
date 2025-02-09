@@ -40,24 +40,7 @@ aout << std::endl;\
 //! Color for cornflower blue. Can be sent directly to glClearColor
 #define CORNFLOWER_BLUE 100 / 255.f, 149 / 255.f, 237 / 255.f, 1
 
-/*!
- * Half the height of the projection matrix. This gives you a renderable area of height 4 ranging
- * from -2 to 2
- */
-static constexpr float kProjectionHalfHeight = 2.f;
-
-/*!
- * The near plane distance for the projection matrix. Since this is an orthographic projection
- * matrix, it's convenient to have negative values for sorting (and avoiding z-fighting at 0).
- */
-static constexpr float kProjectionNearPlane = -1.f;
-
-/*!
- * The far plane distance for the projection matrix. Since this is an orthographic porjection
- * matrix, it's convenient to have the far plane equidistant from 0 as the near plane.
- */
-static constexpr float kProjectionFarPlane = 1.f;
-
+// Base number of particles (will be scaled based on refresh rate)
 static constexpr int BASE_PARTICLE_COUNT = 100000;
 
 Renderer::~Renderer() {
@@ -152,8 +135,9 @@ void Renderer::render() {
         renderParticles();
     }
 
-    auto swapResult = eglSwapBuffers(display_, surface_);
-    assert(swapResult == EGL_TRUE);
+    if (eglSwapBuffers(display_, surface_) != EGL_TRUE) {
+        aout << "Failed to swap buffers: 0x" << std::hex << eglGetError() << std::endl;
+    }
 }
 
 void Renderer::initRenderer() {
@@ -487,8 +471,8 @@ void Renderer::initParticleSystem() {
         float yPos = startY + (row * spacingY);
         
         // Initial velocities scaled to view area
-        float randAngle = (float)rand() / RAND_MAX * 2.0f * M_PI;
-        float randSpeed = ((float)rand() / RAND_MAX * 2.0f);  // Adjusted for view area
+        float randAngle = static_cast<float>(rand()) / static_cast<float>(RAND_MAX) * 2.0f * M_PI;
+        float randSpeed = static_cast<float>(rand()) / static_cast<float>(RAND_MAX) * 2.0f;  // Adjusted for view area
         
         // Store in SoA format
         positions[i * 2] = xPos;
