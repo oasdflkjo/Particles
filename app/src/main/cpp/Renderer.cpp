@@ -389,20 +389,14 @@ void Renderer::handleInput() {
                 // Update gravity point
                 gravityPoint_[0] = worldX;
                 gravityPoint_[1] = worldY;
-                aout << "Updated gravity point to: (" << gravityPoint_[0] << ", " << gravityPoint_[1] 
-                     << ") from screen coords: (" << x << ", " << y << ")" << std::endl;
                 break;
 
             case AMOTION_EVENT_ACTION_POINTER_DOWN:
-                aout << "(" << pointer.id << ", " << x << ", " << y << ") "
-                     << "Pointer Down";
                 break;
 
             case AMOTION_EVENT_ACTION_CANCEL:
             case AMOTION_EVENT_ACTION_UP:
             case AMOTION_EVENT_ACTION_POINTER_UP:
-                aout << "(" << pointer.id << ", " << x << ", " << y << ") "
-                     << "Pointer Up";
                 break;
 
             default:
@@ -412,13 +406,7 @@ void Renderer::handleInput() {
                         pointer = motionEvent.pointers[index];
                         x = GameActivityPointerAxes_getX(&pointer);
                         y = GameActivityPointerAxes_getY(&pointer);
-                        aout << "(" << pointer.id << ", " << x << ", " << y << ")";
-                        if (index != (motionEvent.pointerCount - 1)) aout << ",";
-                        aout << " ";
                     }
-                    aout << "Pointer Move";
-                } else {
-                    aout << "Unknown MotionEvent Action: " << action;
                 }
         }
         aout << std::endl;

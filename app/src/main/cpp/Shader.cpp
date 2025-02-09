@@ -128,7 +128,6 @@ void Shader::activate() const {
         aout << "Error activating shader program " << program_ << ": 0x" << std::hex << error << std::endl;
         throw std::runtime_error("Failed to activate shader program");
     }
-    aout << "Activated shader program " << program_ << std::endl;
 }
 
 void Shader::deactivate() const {
