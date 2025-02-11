@@ -1,6 +1,6 @@
 # Particles
 
-<img src="https://github.com/user-attachments/assets/a4dfa909-aa3b-4a5c-bf49-80e5ee2910b1" width="400">
+<img src="https://github.com/user-attachments/assets/a4dfa909-aa3b-4a5c-bf49-80e5ee2910b1" width="200">
 
 
 A GPU-accelerated particle system demo for Android using OpenGL ES 3.1 compute shaders. The application demonstrates high-performance particle simulation with gravity-based behavior running entirely on the GPU.
