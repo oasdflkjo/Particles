@@ -10,6 +10,7 @@ https://youtube.com/shorts/HcBy-DEXZ4o
 - Google Pixel 7a
 - Honor 90 Lite
 - One Plus 12R
+- Samsung A53
 
 **Not working on**
 - OnePlus 6 T (exitting app needs phone reboot???)
