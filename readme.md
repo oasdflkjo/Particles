@@ -12,12 +12,11 @@ https://youtube.com/shorts/HcBy-DEXZ4o
 - One Plus 12R
 - Samsung A53
 
-**Not working on**
+**Not Working On**
 - OnePlus 6 T (exitting app needs phone reboot???)
 
 **Important Notes:**
 - This project is currently optimized and tested exclusively on Google Pixel 7a
-- Running with a hard 120 FPS limit
 - Performance may vary on devices with different GPU capabilities
 - Not officially supported on other devices at this time
 
