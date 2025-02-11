@@ -2,12 +2,17 @@
 
 A GPU-accelerated particle system demo for Android using OpenGL ES 3.1 compute shaders. The application demonstrates high-performance particle simulation with gravity-based behavior running entirely on the GPU.
 
-<img src="docs/images/Screenshot.png" width="50%" alt="Particle System Demo">
+https://youtube.com/shorts/HcBy-DEXZ4o
 
 ## ⚠️ Device Compatibility
 
 **Currently Tested Only On:**
 - Google Pixel 7a
+- Honor 90 Lite
+- One Plus 12R
+
+**Not working on**
+- OnePlus 6 T (exitting app needs phone reboot???)
 
 **Important Notes:**
 - This project is currently optimized and tested exclusively on Google Pixel 7a
