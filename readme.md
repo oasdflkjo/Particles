@@ -36,6 +36,7 @@ https://youtube.com/shorts/HcBy-DEXZ4o
 ## Installation
 
 Clone the repository and build using Android Studio. Or join beta ❤️
+https://particles-app.xyz/
 
 ## Future Updates
 
