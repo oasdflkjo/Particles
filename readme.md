@@ -24,8 +24,7 @@ https://youtube.com/shorts/HcBy-DEXZ4o
 
 - GPU-accelerated particle simulation using OpenGL ES 3.1 compute shaders
 - Real-time gravity-based particle behavior
-- High-performance 120 FPS rendering
-- Efficient Structure of Arrays (SoA) data layout
+- High-performance 90 FPS rendering (120 if possible but untested)
 - Hardware-accelerated graphics using OpenGL ES 3.1
 
 ## Requirements
@@ -36,7 +35,7 @@ https://youtube.com/shorts/HcBy-DEXZ4o
 
 ## Installation
 
-Clone the repository and build using Android Studio.
+Clone the repository and build using Android Studio. Or join beta ❤️
 
 ## Future Updates
 
@@ -53,6 +52,7 @@ Your testing helps make this project better for everyone!
 
 - Performance may vary significantly on devices other than Pixel 7a
 - Device compatibility is currently limited to devices supporting OpenGL ES 3.1+
+- OnePlus 6 T (exitting app needs phone reboot???)
 
 ## Contributing
 
