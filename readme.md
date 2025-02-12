@@ -9,7 +9,7 @@ https://youtube.com/shorts/HcBy-DEXZ4o
 
 ## ⚠️ Device Compatibility
 
-**Currently Tested Only On:**
+**Currently Tested On:**
 - Google Pixel 7a
 - Honor 90 Lite
 - One Plus 12R
