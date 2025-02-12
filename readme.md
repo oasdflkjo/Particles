@@ -14,6 +14,7 @@ https://youtube.com/shorts/HcBy-DEXZ4o
 - Honor 90 Lite
 - One Plus 12R
 - Samsung A53
+- OnePlus Nord 2T
 
 **Not Working On**
 - OnePlus 6 T (exitting app needs phone reboot???)
