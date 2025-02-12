@@ -17,7 +17,7 @@ https://youtube.com/shorts/HcBy-DEXZ4o
 - OnePlus Nord 2T
 
 **Not Working On**
-- OnePlus 6 T (exitting app needs phone reboot???)
+- OnePlus 6 T (exiting app needs phone reboot???)
 
 **Important Notes:**
 - This project is currently optimized and tested exclusively on Google Pixel 7a
